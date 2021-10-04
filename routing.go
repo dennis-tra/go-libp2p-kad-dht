@@ -459,6 +459,7 @@ func (dht *IpfsDHT) FindProviders(ctx context.Context, c cid.Cid) ([]peer.AddrIn
 	} else if !c.Defined() {
 		return nil, fmt.Errorf("invalid cid: undefined")
 	}
+	fmt.Printf("Start finding providers for cid %v\n", c.String())
 
 	var providers []peer.AddrInfo
 	for p := range dht.FindProvidersAsync(ctx, c, dht.bucketSize) {
