@@ -464,6 +464,9 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		}(p)
 	}
 	wg.Wait()
+	if log {
+		fmt.Printf("Finish providing cid %v\n", key.String())
+	}
 	if exceededDeadline {
 		return context.DeadlineExceeded
 	}
