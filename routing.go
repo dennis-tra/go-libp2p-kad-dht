@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -376,9 +377,16 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	} else if !key.Defined() {
 		return fmt.Errorf("invalid cid: undefined")
 	}
+	// Check if this provide is called after as part of an experiment
+	log := false
+	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
+		log = true
+	}
 	keyMH := key.Hash()
 	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
-	fmt.Printf("Start providing cid %v\n", key.String())
+	if log {
+		fmt.Printf("Start providing cid %v\n", key.String())
+	}
 
 	// add self locally
 	dht.ProviderManager.AddProvider(ctx, keyMH, dht.self)
@@ -408,7 +416,9 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	}
 
 	var exceededDeadline bool
-	fmt.Printf("Start getting closest peers to cid %v\n", key.String())
+	if log {
+		fmt.Printf("Start getting closest peers to cid %v\n", key.String())
+	}
 	peers, err := dht.GetClosestPeers(closerCtx, string(keyMH))
 	switch err {
 	case context.DeadlineExceeded:
@@ -423,11 +433,13 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	default:
 		return err
 	}
-	fmt.Printf("Got %v closest peers to cid %v: ", len(peers), key.String())
-	for _, peer := range peers {
-		fmt.Printf("%v ", peer.String())
+	if log {
+		fmt.Printf("Got %v closest peers to cid %v: ", len(peers), key.String())
+		for _, peer := range peers {
+			fmt.Printf("%v ", peer.String())
+		}
+		fmt.Println()
 	}
-	fmt.Println()
 
 	wg := sync.WaitGroup{}
 	for _, p := range peers {
@@ -435,13 +447,19 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		go func(p peer.ID) {
 			defer wg.Done()
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
-			fmt.Printf("Start putting provider record for cid %v to %v\n", key.String(), p.String())
+			if log {
+				fmt.Printf("Start putting provider record for cid %v to %v\n", key.String(), p.String())
+			}
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
 			if err != nil {
-				fmt.Printf("Error putting provider record for cid %v to %v\n", key.String(), p.String())
+				if log {
+					fmt.Printf("Error putting provider record for cid %v to %v\n", key.String(), p.String())
+				}
 				logger.Debug(err)
 			} else {
-				fmt.Printf("Done putting provider record for cid %v to %v\n", key.String(), p.String())
+				if log {
+					fmt.Printf("Done putting provider record for cid %v to %v\n", key.String(), p.String())
+				}
 			}
 		}(p)
 	}
