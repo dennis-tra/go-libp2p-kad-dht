@@ -535,7 +535,6 @@ func (dht *IpfsDHT) FindProvidersAsync(ctx context.Context, key cid.Cid, count i
 func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash.Multihash, count int, peerOut chan peer.AddrInfo) {
 	defer close(peerOut)
 
-	fmt.Println("findProvidersAsyncRoutine")
 	findAll := count == 0
 	var ps *peer.Set
 	if findAll {
@@ -565,7 +564,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	}
 
 	log := false
-	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
+	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.B58String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -655,7 +654,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
 		activeTestingLock.Unlock()
-		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.String()))
+		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.B58String()))
 	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
