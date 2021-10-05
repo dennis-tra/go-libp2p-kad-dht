@@ -26,6 +26,7 @@ import (
 // This file implements the Routing interface for the IpfsDHT struct.
 var activeTesting map[string]bool
 var activeTestingLock sync.RWMutex
+var testLog bool
 
 // Basic Put/Get
 
@@ -380,9 +381,9 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		return fmt.Errorf("invalid cid: undefined")
 	}
 	// Check if this provide is called after as part of an experiment
-	log := false
+	testLog = false
 	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
-		log = true
+		testLog = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
 			activeTesting = map[string]bool{}
@@ -399,7 +400,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	}
 	keyMH := key.Hash()
 	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
-	if log {
+	if testLog {
 		fmt.Printf("Start providing cid %v\n", key.String())
 	}
 
@@ -431,7 +432,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	}
 
 	var exceededDeadline bool
-	if log {
+	if testLog {
 		fmt.Printf("Start getting closest peers to cid %v\n", key.String())
 	}
 	peers, err := dht.GetClosestPeers(closerCtx, string(keyMH))
@@ -448,7 +449,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	default:
 		return err
 	}
-	if log {
+	if testLog {
 		fmt.Printf("Got %v closest peers to cid %v: ", len(peers), key.String())
 		for _, peer := range peers {
 			fmt.Printf("%v ", peer.String())
@@ -462,24 +463,24 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		go func(p peer.ID) {
 			defer wg.Done()
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
-			if log {
+			if testLog {
 				fmt.Printf("Start putting provider record for cid %v to %v\n", key.String(), p.String())
 			}
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
 			if err != nil {
-				if log {
+				if testLog {
 					fmt.Printf("Error putting provider record for cid %v to %v\n", key.String(), p.String())
 				}
 				logger.Debug(err)
 			} else {
-				if log {
+				if testLog {
 					fmt.Printf("Done putting provider record for cid %v to %v\n", key.String(), p.String())
 				}
 			}
 		}(p)
 	}
 	wg.Wait()
-	if log {
+	if testLog {
 		fmt.Printf("Finish providing cid %v\n", key.String())
 		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
@@ -563,9 +564,9 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		}
 	}
 
-	log := false
+	testLog = false
 	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.B58String())); err == nil {
-		log = true
+		testLog = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
 			activeTesting = map[string]bool{}
@@ -581,7 +582,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		activeTestingLock.Unlock()
 	}
 
-	if log {
+	if testLog {
 		fmt.Printf("Start searching providers for cid %v\n", key.B58String())
 	}
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(key),
@@ -591,7 +592,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 				Type: routing.SendingQuery,
 				ID:   p,
 			})
-			if log {
+			if testLog {
 				fmt.Printf("Getting providers for cid %v from %v\n", key.B58String(), p.String())
 			}
 			provs, closest, err := dht.protoMessenger.GetProviders(ctx, p, key)
@@ -604,12 +605,12 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			// Add unique providers from request, up to 'count'
 			for _, prov := range provs {
 				dht.maybeAddAddrs(prov.ID, prov.Addrs, peerstore.TempAddrTTL)
-				if log {
+				if testLog {
 					fmt.Printf("Found provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
 				}
 				logger.Debugf("got provider: %s", prov)
 				if ps.TryAdd(prov.ID) {
-					if log {
+					if testLog {
 						fmt.Printf("Connected to provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
 					}
 					logger.Debugf("using provider: %s", prov)
@@ -628,7 +629,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 			// Give closer peers back to the query to be queried
 			logger.Debugf("got closer peers: %d %s", len(closest), closest)
-			if log {
+			if testLog {
 				fmt.Printf("Got %v closest peers to cid %v: ", len(closest), key.B58String())
 				for _, peer := range closest {
 					fmt.Printf("%v ", peer.ID.String())
@@ -649,7 +650,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		},
 	)
 
-	if log {
+	if testLog {
 		fmt.Printf("Finish searching providers for cid %v\n", key.B58String())
 		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
