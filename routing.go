@@ -395,6 +395,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		} else {
 			activeTesting[key.String()] = true
 		}
+		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.String()))
 		activeTestingLock.Unlock()
 	}
 	keyMH := key.Hash()
@@ -535,7 +536,6 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
 		activeTestingLock.Unlock()
-		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.String()))
 	}
 	if exceededDeadline {
 		return context.DeadlineExceeded
@@ -621,14 +621,15 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		if activeTesting == nil {
 			activeTesting = map[string]bool{}
 		}
-		_, ok := activeTesting[key.String()]
+		_, ok := activeTesting[key.B58String()]
 		if ok {
 			// There is an active testing on.
 			activeTestingLock.Unlock()
 			return
 		} else {
-			activeTesting[key.String()] = true
+			activeTesting[key.B58String()] = true
 		}
+		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.B58String()))
 		activeTestingLock.Unlock()
 	}
 
@@ -703,9 +704,8 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if log {
 		fmt.Printf("Finish searching providers for cid %v\n", key.B58String())
 		activeTestingLock.Lock()
-		delete(activeTesting, key.String())
+		delete(activeTesting, key.B58String())
 		activeTestingLock.Unlock()
-		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.B58String()))
 	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
