@@ -384,6 +384,9 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
+		if activeTesting == nil {
+			activeTesting = map[string]bool{}
+		}
 		_, ok := activeTesting[key.String()]
 		if ok {
 			// There is an active testing on.
@@ -564,6 +567,9 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
+		if activeTesting == nil {
+			activeTesting = map[string]bool{}
+		}
 		_, ok := activeTesting[key.String()]
 		if ok {
 			// There is an active testing on.
