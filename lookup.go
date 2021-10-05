@@ -28,22 +28,11 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 				Type: routing.SendingQuery,
 				ID:   p,
 			})
-			if testLog {
-				fmt.Printf("Getting closest peers for cid %v from %v\n", peer.ID(key).String(), p.String())
-			}
 
 			peers, err := dht.protoMessenger.GetClosestPeers(ctx, p, peer.ID(key))
 			if err != nil {
 				logger.Debugf("error getting closer peers: %s", err)
 				return nil, err
-			}
-
-			if testLog {
-				fmt.Printf("Got %v closest peers to cid %v: ", len(peers), peer.ID(key).String())
-				for _, peer := range peers {
-					fmt.Printf("%v ", peer.ID.String())
-				}
-				fmt.Println()
 			}
 
 			// For DHT query command
