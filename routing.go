@@ -463,18 +463,16 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		go func(p peer.ID) {
 			defer wg.Done()
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
-			if testLog {
-				fmt.Printf("Start putting provider record for cid %v to %v\n", key.String(), p.String())
-			}
+			start := time.Now()
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
 			if err != nil {
 				if testLog {
-					fmt.Printf("Error putting provider record for cid %v to %v\n", key.String(), p.String())
+					fmt.Printf("Error putting provider record for cid %v to %v time taken: %v\n", key.String(), p.String(), time.Since(start))
 				}
 				logger.Debug(err)
 			} else {
 				if testLog {
-					fmt.Printf("Done putting provider record for cid %v to %v\n", key.String(), p.String())
+					fmt.Printf("Succeed in putting provider record for cid %v to %v time taken: %v\n", key.String(), p.String(), time.Since(start))
 				}
 			}
 		}(p)
