@@ -480,7 +480,6 @@ func (dht *IpfsDHT) FindProviders(ctx context.Context, c cid.Cid) ([]peer.AddrIn
 	} else if !c.Defined() {
 		return nil, fmt.Errorf("invalid cid: undefined")
 	}
-	fmt.Printf("Start finding providers for cid %v\n", c.String())
 
 	var providers []peer.AddrInfo
 	for p := range dht.FindProvidersAsync(ctx, c, dht.bucketSize) {
@@ -527,6 +526,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 	provs := dht.ProviderManager.GetProviders(ctx, key)
 	for _, p := range provs {
+		fmt.Printf("Got provider %v", p.String())
 		// NOTE: Assuming that this list of peers is unique
 		if ps.TryAdd(p) {
 			pi := dht.peerstore.PeerInfo(p)
@@ -544,6 +544,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		}
 	}
 
+	fmt.Printf("Start looking for providers for cid %v\n", key.B58String())
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(key),
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
 			// For DHT query command
@@ -552,6 +553,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 				ID:   p,
 			})
 
+			fmt.Printf("Getting providers for cid %v from %v\n", key.B58String(), p.String())
 			provs, closest, err := dht.protoMessenger.GetProviders(ctx, p, key)
 			if err != nil {
 				return nil, err
@@ -562,8 +564,10 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			// Add unique providers from request, up to 'count'
 			for _, prov := range provs {
 				dht.maybeAddAddrs(prov.ID, prov.Addrs, peerstore.TempAddrTTL)
+				fmt.Printf("Found provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
 				logger.Debugf("got provider: %s", prov)
 				if ps.TryAdd(prov.ID) {
+					fmt.Printf("Connected to provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
 					logger.Debugf("using provider: %s", prov)
 					select {
 					case peerOut <- *prov:
@@ -581,6 +585,12 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			// Give closer peers back to the query to be queried
 			logger.Debugf("got closer peers: %d %s", len(closest), closest)
 
+			fmt.Printf("Got %v closest peers to cid %v: ", len(closest), key.B58String())
+			for _, peer := range closest {
+				fmt.Printf("%v ", peer.ID.String())
+			}
+			fmt.Println()
+
 			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 				Type:      routing.PeerResponse,
 				ID:        p,
@@ -594,6 +604,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		},
 	)
 
+	fmt.Printf("Done getting providers for cid %v\n", key.B58String())
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
 	}
