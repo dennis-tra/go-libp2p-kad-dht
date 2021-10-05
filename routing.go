@@ -24,6 +24,8 @@ import (
 )
 
 // This file implements the Routing interface for the IpfsDHT struct.
+var activeTesting map[string]bool
+var activeTestingLock sync.RWMutex
 
 // Basic Put/Get
 
@@ -381,6 +383,16 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	log := false
 	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
 		log = true
+		activeTestingLock.Lock()
+		_, ok := activeTesting[key.String()]
+		if ok {
+			// There is an active testing on.
+			activeTestingLock.Unlock()
+			return nil
+		} else {
+			activeTesting[key.String()] = true
+		}
+		activeTestingLock.Unlock()
 	}
 	keyMH := key.Hash()
 	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
@@ -466,6 +478,10 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	wg.Wait()
 	if log {
 		fmt.Printf("Finish providing cid %v\n", key.String())
+		activeTestingLock.Lock()
+		delete(activeTesting, key.String())
+		activeTestingLock.Unlock()
+		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.String()))
 	}
 	if exceededDeadline {
 		return context.DeadlineExceeded
@@ -544,7 +560,24 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		}
 	}
 
-	fmt.Printf("Start looking for providers for cid %v\n", key.B58String())
+	log := false
+	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
+		log = true
+		activeTestingLock.Lock()
+		_, ok := activeTesting[key.String()]
+		if ok {
+			// There is an active testing on.
+			activeTestingLock.Unlock()
+			return
+		} else {
+			activeTesting[key.String()] = true
+		}
+		activeTestingLock.Unlock()
+	}
+
+	if log {
+		fmt.Printf("Start searching providers for cid %v\n", key.B58String())
+	}
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(key),
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
 			// For DHT query command
@@ -552,8 +585,9 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 				Type: routing.SendingQuery,
 				ID:   p,
 			})
-
-			fmt.Printf("Getting providers for cid %v from %v\n", key.B58String(), p.String())
+			if log {
+				fmt.Printf("Getting providers for cid %v from %v\n", key.B58String(), p.String())
+			}
 			provs, closest, err := dht.protoMessenger.GetProviders(ctx, p, key)
 			if err != nil {
 				return nil, err
@@ -564,10 +598,14 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			// Add unique providers from request, up to 'count'
 			for _, prov := range provs {
 				dht.maybeAddAddrs(prov.ID, prov.Addrs, peerstore.TempAddrTTL)
-				fmt.Printf("Found provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
+				if log {
+					fmt.Printf("Found provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
+				}
 				logger.Debugf("got provider: %s", prov)
 				if ps.TryAdd(prov.ID) {
-					fmt.Printf("Connected to provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
+					if log {
+						fmt.Printf("Connected to provider for cid %v from %v: %v\n", key.B58String(), p.String(), prov.ID.String())
+					}
 					logger.Debugf("using provider: %s", prov)
 					select {
 					case peerOut <- *prov:
@@ -584,12 +622,13 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 			// Give closer peers back to the query to be queried
 			logger.Debugf("got closer peers: %d %s", len(closest), closest)
-
-			fmt.Printf("Got %v closest peers to cid %v: ", len(closest), key.B58String())
-			for _, peer := range closest {
-				fmt.Printf("%v ", peer.ID.String())
+			if log {
+				fmt.Printf("Got %v closest peers to cid %v: ", len(closest), key.B58String())
+				for _, peer := range closest {
+					fmt.Printf("%v ", peer.ID.String())
+				}
+				fmt.Println()
 			}
-			fmt.Println()
 
 			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 				Type:      routing.PeerResponse,
@@ -604,7 +643,13 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		},
 	)
 
-	fmt.Printf("Done getting providers for cid %v\n", key.B58String())
+	if log {
+		fmt.Printf("Finish searching providers for cid %v\n", key.B58String())
+		activeTestingLock.Lock()
+		delete(activeTesting, key.String())
+		activeTestingLock.Unlock()
+		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.String()))
+	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
 	}
