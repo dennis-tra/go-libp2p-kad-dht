@@ -29,7 +29,7 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 				ID:   p,
 			})
 			if testLog {
-				fmt.Printf("Getting closest peers for cid %v from %v\n", key, p.String())
+				fmt.Printf("Getting closest peers for cid %v from %v\n", peer.ID(key).String(), p.String())
 			}
 
 			peers, err := dht.protoMessenger.GetClosestPeers(ctx, p, peer.ID(key))
@@ -39,7 +39,7 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 			}
 
 			if testLog {
-				fmt.Printf("Got %v closest peers to cid %v: ", len(peers), key)
+				fmt.Printf("Got %v closest peers to cid %v: ", len(peers), peer.ID(key).String())
 				for _, peer := range peers {
 					fmt.Printf("%v ", peer.ID.String())
 				}
