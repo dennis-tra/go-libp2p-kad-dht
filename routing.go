@@ -535,6 +535,7 @@ func (dht *IpfsDHT) FindProvidersAsync(ctx context.Context, key cid.Cid, count i
 func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash.Multihash, count int, peerOut chan peer.AddrInfo) {
 	defer close(peerOut)
 
+	fmt.Println("findProvidersAsyncRoutine")
 	findAll := count == 0
 	var ps *peer.Set
 	if findAll {
