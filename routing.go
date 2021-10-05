@@ -458,7 +458,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 				}
 
 				if log {
-					fmt.Printf("Got %v closest peers to cid %v: ", len(peers), peer.ID(key).String())
+					fmt.Printf("Got %v closest peers to cid %v from %v\n: ", len(peers), peer.ID(key).String(), p.String())
 					for _, peer := range peers {
 						fmt.Printf("%v ", peer.ID.String())
 					}
@@ -503,7 +503,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		return err
 	}
 	if log {
-		fmt.Printf("Got %v closest peers to cid %v: ", len(peers), key.String())
+		fmt.Printf("In total, got %v closest peers to cid %v to publish record: ", len(peers), key.String())
 		for _, peer := range peers {
 			fmt.Printf("%v ", peer.String())
 		}
@@ -681,7 +681,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			// Give closer peers back to the query to be queried
 			logger.Debugf("got closer peers: %d %s", len(closest), closest)
 			if log {
-				fmt.Printf("Got %v closest peers to cid %v: ", len(closest), key.B58String())
+				fmt.Printf("Got %v closest peers to cid %v from %v: ", len(closest), key.B58String(), p.String())
 				for _, peer := range closest {
 					fmt.Printf("%v ", peer.ID.String())
 				}
