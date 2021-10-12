@@ -387,6 +387,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		ipfsTestFolder = "/ipfs-tests"
 	}
 	if _, err := os.Stat(path.Join(ipfsTestFolder, key.String())); err == nil {
+		os.Remove(path.Join(ipfsTestFolder, key.String()))
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -400,7 +401,6 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		} else {
 			activeTesting[key.String()] = true
 		}
-		os.Remove(path.Join(ipfsTestFolder, key.String()))
 		activeTestingLock.Unlock()
 	}
 	keyMH := key.Hash()
@@ -626,6 +626,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		ipfsTestFolder = "/ipfs-tests"
 	}
 	if _, err := os.Stat(path.Join(ipfsTestFolder, key.B58String())); err == nil {
+		os.Remove(path.Join(ipfsTestFolder, key.B58String()))
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -639,7 +640,6 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		} else {
 			activeTesting[key.B58String()] = true
 		}
-		os.Remove(path.Join(ipfsTestFolder, key.B58String()))
 		activeTestingLock.Unlock()
 	}
 
