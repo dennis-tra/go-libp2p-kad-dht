@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"sync"
 	"time"
 
@@ -381,7 +382,11 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	}
 	// Check if this provide is called after as part of an experiment
 	log := false
-	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.String())); err == nil {
+	ipfsTestFolder := os.Getenv("PERFORMANCE_TEST_DIR")
+	if ipfsTestFolder == "" {
+		ipfsTestFolder = "/ipfs-tests"
+	}
+	if _, err := os.Stat(path.Join(ipfsTestFolder, key.String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -395,7 +400,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		} else {
 			activeTesting[key.String()] = true
 		}
-		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.String()))
+		os.Remove(path.Join(ipfsTestFolder, key.String()))
 		activeTestingLock.Unlock()
 	}
 	keyMH := key.Hash()
@@ -615,7 +620,11 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	}
 
 	log := false
-	if _, err := os.Stat(fmt.Sprintf("/ipfs-tests/%v", key.B58String())); err == nil {
+	ipfsTestFolder := os.Getenv("PERFORMANCE_TEST_DIR")
+	if ipfsTestFolder == "" {
+		ipfsTestFolder = "/ipfs-tests"
+	}
+	if _, err := os.Stat(path.Join(ipfsTestFolder, key.B58String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -629,7 +638,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		} else {
 			activeTesting[key.B58String()] = true
 		}
-		os.Remove(fmt.Sprintf("/ipfs-tests/%v", key.B58String()))
+		os.Remove(path.Join(ipfsTestFolder, key.B58String()))
 		activeTestingLock.Unlock()
 	}
 
