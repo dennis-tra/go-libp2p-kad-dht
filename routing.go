@@ -386,8 +386,8 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
 	}
-	if _, err := os.Stat(path.Join(ipfsTestFolder, key.String())); err == nil {
-		os.Remove(path.Join(ipfsTestFolder, key.String()))
+	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String()))); err == nil {
+		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String())))
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -541,7 +541,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
 		activeTestingLock.Unlock()
-		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-%v", key.String())), []byte{0}, os.ModePerm)
+		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-provide-%v", key.String())), []byte{0}, os.ModePerm)
 	}
 	if exceededDeadline {
 		return context.DeadlineExceeded
@@ -625,8 +625,8 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
 	}
-	if _, err := os.Stat(path.Join(ipfsTestFolder, key.B58String())); err == nil {
-		os.Remove(path.Join(ipfsTestFolder, key.B58String()))
+	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("lookup-%v", key.B58String()))); err == nil {
+		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("lookup-%v", key.B58String())))
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -716,7 +716,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		activeTestingLock.Lock()
 		delete(activeTesting, key.B58String())
 		activeTestingLock.Unlock()
-		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-%v", key.B58String())), []byte{0}, os.ModePerm)
+		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-lookup-%v", key.B58String())), []byte{0}, os.ModePerm)
 	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
