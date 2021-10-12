@@ -386,7 +386,6 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
 	}
-	fmt.Println(path.Join(ipfsTestFolder, key.String()))
 	if _, err := os.Stat(path.Join(ipfsTestFolder, key.String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
