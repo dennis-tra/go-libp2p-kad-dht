@@ -389,17 +389,19 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	if _, err := os.Stat(path.Join(ipfsTestFolder, key.String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
-		defer activeTestingLock.Unlock()
 		if activeTesting == nil {
 			activeTesting = map[string]bool{}
 		}
 		_, ok := activeTesting[key.String()]
 		if ok {
 			// There is an active testing on.
+			activeTestingLock.Unlock()
 			return nil
 		} else {
 			activeTesting[key.String()] = true
 		}
+		os.Remove(path.Join(ipfsTestFolder, key.String()))
+		activeTestingLock.Unlock()
 	}
 	keyMH := key.Hash()
 	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
@@ -536,8 +538,9 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	wg.Wait()
 	if log {
 		fmt.Printf("Finish providing cid %v\n", key.String())
+		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
-		os.Remove(path.Join(ipfsTestFolder, key.String()))
+		activeTestingLock.Unlock()
 	}
 	if exceededDeadline {
 		return context.DeadlineExceeded
@@ -624,17 +627,19 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if _, err := os.Stat(path.Join(ipfsTestFolder, key.B58String())); err == nil {
 		log = true
 		activeTestingLock.Lock()
-		defer activeTestingLock.Unlock()
 		if activeTesting == nil {
 			activeTesting = map[string]bool{}
 		}
 		_, ok := activeTesting[key.B58String()]
 		if ok {
 			// There is an active testing on.
+			activeTestingLock.Unlock()
 			return
 		} else {
 			activeTesting[key.B58String()] = true
 		}
+		os.Remove(path.Join(ipfsTestFolder, key.B58String()))
+		activeTestingLock.Unlock()
 	}
 
 	if log {
@@ -707,8 +712,9 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 	if log {
 		fmt.Printf("Finish searching providers for cid %v\n", key.B58String())
+		activeTestingLock.Lock()
 		delete(activeTesting, key.B58String())
-		os.Remove(path.Join(ipfsTestFolder, key.B58String()))
+		activeTestingLock.Unlock()
 	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
