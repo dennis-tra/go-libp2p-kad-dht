@@ -541,6 +541,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		activeTestingLock.Lock()
 		delete(activeTesting, key.String())
 		activeTestingLock.Unlock()
+		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-%v", key.String())), []byte{0}, os.ModePerm)
 	}
 	if exceededDeadline {
 		return context.DeadlineExceeded
@@ -715,6 +716,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		activeTestingLock.Lock()
 		delete(activeTesting, key.B58String())
 		activeTestingLock.Unlock()
+		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-%v", key.B58String())), []byte{0}, os.ModePerm)
 	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
