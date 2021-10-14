@@ -688,11 +688,11 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 				logger.Debugf("got provider: %s", prov)
 				if ps.TryAdd(prov.ID) {
 					if log {
-						agentVersion := "n.a."
+						agentVersion2 := "n.a."
 						if agent, err := dht.peerstore.Get(prov.ID, "AgentVersion"); err == nil {
-							agentVersion = agent.(string)
+							agentVersion2 = agent.(string)
 						}
-						fmt.Printf("Connected to provider %v(%v) for cid %v from %v\n", prov.ID.String(), agentVersion, key.B58String(), p.String())
+						fmt.Printf("Connected to provider %v(%v) for cid %v from %v(%v)\n", prov.ID.String(), agentVersion2, key.B58String(), p.String(), agentVersion)
 					}
 					logger.Debugf("using provider: %s", prov)
 					select {
