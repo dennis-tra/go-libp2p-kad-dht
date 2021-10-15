@@ -680,6 +680,9 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			}
 
 			logger.Debugf("%d provider entries", len(provs))
+			if log {
+				fmt.Printf("Found %v provider entries from from %v(%v)\n", len(provs), p.String(), agentVersion)
+			}
 
 			// Add unique providers from request, up to 'count'
 			for _, prov := range provs {
