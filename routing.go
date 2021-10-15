@@ -612,26 +612,6 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		ps = peer.NewLimitedSet(count)
 	}
 
-	provs := dht.ProviderManager.GetProviders(ctx, key)
-	for _, p := range provs {
-		fmt.Printf("Got provider %v", p.String())
-		// NOTE: Assuming that this list of peers is unique
-		if ps.TryAdd(p) {
-			pi := dht.peerstore.PeerInfo(p)
-			select {
-			case peerOut <- pi:
-			case <-ctx.Done():
-				return
-			}
-		}
-
-		// If we have enough peers locally, don't bother with remote RPC
-		// TODO: is this a DOS vector?
-		if !findAll && ps.Size() >= count {
-			return
-		}
-	}
-
 	log := false
 	ipfsTestFolder := os.Getenv("PERFORMANCE_TEST_DIR")
 	if ipfsTestFolder == "" {
@@ -653,6 +633,28 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			activeTesting[key.B58String()] = true
 		}
 		activeTestingLock.Unlock()
+	}
+
+	if !log {
+		provs := dht.ProviderManager.GetProviders(ctx, key)
+		for _, p := range provs {
+			fmt.Printf("Got provider %v", p.String())
+			// NOTE: Assuming that this list of peers is unique
+			if ps.TryAdd(p) {
+				pi := dht.peerstore.PeerInfo(p)
+				select {
+				case peerOut <- pi:
+				case <-ctx.Done():
+					return
+				}
+			}
+
+			// If we have enough peers locally, don't bother with remote RPC
+			// TODO: is this a DOS vector?
+			if !findAll && ps.Size() >= count {
+				return
+			}
+		}
 	}
 
 	if log {
