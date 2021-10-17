@@ -617,8 +617,8 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
 	}
-	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("lookup-%v", key.B58String()))); err == nil {
-		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("lookup-%v", key.B58String())))
+	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("in-progress-lookup-%v", key.B58String()))); err == nil {
+		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("in-progress-lookup-%v", key.B58String())))
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
@@ -745,7 +745,6 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		activeTestingLock.Lock()
 		delete(activeTesting, key.B58String())
 		activeTestingLock.Unlock()
-		os.WriteFile(path.Join(ipfsTestFolder, fmt.Sprintf("ok-lookup-%v", key.B58String())), []byte{0}, os.ModePerm)
 	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
