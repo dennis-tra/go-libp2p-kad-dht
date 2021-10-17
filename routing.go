@@ -649,10 +649,11 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if !log {
 		provs := dht.ProviderManager.GetProviders(ctx, key)
 		for _, p := range provs {
-			fmt.Printf("Got provider %v", p.String())
 			// NOTE: Assuming that this list of peers is unique
 			if ps.TryAdd(p) {
+				fmt.Printf("Got provider %v", p.String())
 				pi := dht.peerstore.PeerInfo(p)
+				providers = append(providers, pi)
 				select {
 				case peerOut <- pi:
 				case <-ctx.Done():
