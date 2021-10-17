@@ -11,13 +11,9 @@ require (
 	github.com/ipfs/go-cid v0.0.7
 	github.com/ipfs/go-datastore v0.4.5
 	github.com/ipfs/go-detect-race v0.0.1
-	github.com/ipfs/go-ds-badger v0.2.7
-	github.com/ipfs/go-graphsync v0.10.4
-	github.com/ipfs/go-ipfs-blockstore v1.0.4
 	github.com/ipfs/go-ipfs-util v0.0.2
 	github.com/ipfs/go-ipns v0.1.2
 	github.com/ipfs/go-log v1.0.5
-	github.com/ipld/go-ipld-prime v0.12.3
 	github.com/jbenet/goprocess v0.1.4
 	github.com/libp2p/go-eventbus v0.2.1
 	github.com/libp2p/go-libp2p v0.14.4
