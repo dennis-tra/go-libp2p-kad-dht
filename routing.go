@@ -9,6 +9,16 @@ import (
 	"sync"
 	"time"
 
+	badgerds "github.com/ipfs/go-ds-badger"
+	graphsync "github.com/ipfs/go-graphsync/impl"
+	gsnet "github.com/ipfs/go-graphsync/network"
+	"github.com/ipfs/go-graphsync/storeutil"
+	blockstore "github.com/ipfs/go-ipfs-blockstore"
+	cidlink "github.com/ipld/go-ipld-prime/linking/cid"
+	"github.com/ipld/go-ipld-prime/node/basicnode"
+	"github.com/ipld/go-ipld-prime/traversal/selector"
+	"github.com/ipld/go-ipld-prime/traversal/selector/builder"
+	"github.com/libp2p/go-libp2p"
 	"github.com/libp2p/go-libp2p-core/network"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/peerstore"
@@ -613,6 +623,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	}
 
 	log := false
+	providers := make([]peer.AddrInfo, 0)
 	ipfsTestFolder := os.Getenv("PERFORMANCE_TEST_DIR")
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
@@ -700,6 +711,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 						fmt.Printf("Connected to provider %v(%v) for cid %v from %v(%v)\n", prov.ID.String(), agentVersion2, key.B58String(), p.String(), agentVersion)
 					}
 					logger.Debugf("using provider: %s", prov)
+					providers = append(providers, *prov)
 					select {
 					case peerOut <- *prov:
 					case <-ctx.Done():
@@ -739,6 +751,49 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if log {
 		if ctx.Err() == nil {
 			fmt.Printf("Finish searching providers for cid %v\n", key.B58String())
+			// Start a blockstore
+			if len(providers) > 1 {
+				pvd := providers[0]
+				defer os.RemoveAll("./testretdb")
+				dsopts := badgerds.DefaultOptions
+				dsopts.SyncWrites = false
+				dsopts.Truncate = true
+				cds, err := badgerds.NewDatastore("./testretdb", &dsopts)
+				if err != nil {
+					fmt.Printf("Error creating datastore: %v\n", err.Error())
+					return
+				}
+				defer cds.Close()
+				cs := blockstore.NewBlockstore(cds)
+				h, err := libp2p.New(ctx, libp2p.NoListenAddrs)
+				if err != nil {
+					fmt.Printf("Error creating host: %v\n", err.Error())
+				}
+				defer h.Close()
+				exchange := graphsync.New(ctx, gsnet.NewFromLibp2pHost(h), storeutil.LinkSystemForBlockstore(cs))
+				ssb := builder.NewSelectorSpecBuilder(basicnode.Prototype.Any)
+				allSelector := ssb.ExploreRecursive(selector.RecursionLimitNone(),
+					ssb.ExploreAll(ssb.ExploreRecursiveEdge())).Node()
+				root, _ := cid.Parse(key.B58String())
+				// Start retrieving
+				fmt.Printf("Start retrieving cid %v\n", root.String())
+				err = h.Connect(ctx, pvd)
+				if err != nil {
+					fmt.Printf("Error connecting to provider %v: %v\n", pvd.ID, err.Error())
+				} else {
+					_, errCh := exchange.Request(ctx, pvd.ID, cidlink.Link{Cid: root}, allSelector)
+					select {
+					case err = <-errCh:
+					case <-ctx.Done():
+						err = ctx.Err()
+					}
+					if err != nil {
+						fmt.Printf("Error retrieving cid %v to provider %v: %v\n", root.String(), pvd.ID, err.Error())
+					} else {
+						fmt.Printf("Finish retrieving cid %v\n", root.String())
+					}
+				}
+			}
 		} else {
 			fmt.Printf("Finish searching providers for cid %v with ctx error: %v\n", key.B58String(), ctx.Err())
 		}
