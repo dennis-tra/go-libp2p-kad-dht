@@ -633,12 +633,14 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			activeTesting[key.B58String()] = true
 		}
 		activeTestingLock.Unlock()
+	} else if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("lookup-%v", key.B58String()))); err == nil {
+		// Skip the second search.
+		return
 	}
 
 	if !log {
 		provs := dht.ProviderManager.GetProviders(ctx, key)
 		for _, p := range provs {
-			fmt.Printf("Got provider %v", p.String())
 			// NOTE: Assuming that this list of peers is unique
 			if ps.TryAdd(p) {
 				pi := dht.peerstore.PeerInfo(p)
