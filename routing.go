@@ -537,7 +537,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 			}
 			if err != nil {
 				if log {
-					fmt.Printf("Error putting provider record for cid %v to %v(%v) time taken: %v\n", key.String(), p.String(), agentVersion, time.Since(start))
+					fmt.Printf("Error putting provider record for cid %v to %v(%v) (%v) time taken: %v\n", key.String(), p.String(), agentVersion, err.Error(), time.Since(start))
 				}
 				logger.Debug(err)
 			} else {
