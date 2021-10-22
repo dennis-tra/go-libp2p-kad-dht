@@ -543,6 +543,17 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 			} else {
 				if log {
 					fmt.Printf("Succeed in putting provider record for cid %v to %v(%v) time taken: %v\n", key.String(), p.String(), agentVersion, time.Since(start))
+					// Now try to get the record from the peer
+					pvds, _, err := dht.protoMessenger.GetProviders(ctx, p, keyMH)
+					if err != nil {
+						fmt.Printf("Error getting provider record for cid %v from %v(%v) after a successful put\n", key.String(), p.String(), agentVersion)
+					} else {
+						fmt.Printf("Got %v provider records back ", len(pvds))
+						for _, pvd := range pvds {
+							fmt.Printf("%v ", pvd.ID)
+						}
+						fmt.Println()
+					}
 				}
 			}
 		}(p)
