@@ -548,11 +548,11 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 					if err != nil {
 						fmt.Printf("Error getting provider record for cid %v from %v(%v) after a successful put\n", key.String(), p.String(), agentVersion)
 					} else {
-						fmt.Printf("Got %v provider records back ", len(pvds))
+						msg := fmt.Sprintf("Got %v provider records back from %v(%v) after a successful put: ", len(pvds), p.String(), agentVersion)
 						for _, pvd := range pvds {
-							fmt.Printf("%v ", pvd.ID)
+							msg = fmt.Sprintf("%v %v", msg, pvd.ID)
 						}
-						fmt.Println()
+						fmt.Println(msg)
 					}
 				}
 			}
