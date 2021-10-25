@@ -468,7 +468,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 				}
 
 				if log {
-					msg := fmt.Sprintf("Got %v closest peers to cid %v from %v(%v)\n: ", len(peers), peer.ID(key).String(), p.String(), agentVersion)
+					msg := fmt.Sprintf("Got %v closest peers to cid %v from %v(%v): ", len(peers), peer.ID(key).String(), p.String(), agentVersion)
 					for _, peer := range peers {
 						msg = fmt.Sprintf("%v %v", msg, peer.ID.String())
 					}
