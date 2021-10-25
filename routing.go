@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -467,11 +468,11 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 				}
 
 				if log {
-					fmt.Printf("Got %v closest peers to cid %v from %v(%v)\n: ", len(peers), peer.ID(key).String(), p.String(), agentVersion)
+					msg := fmt.Sprintf("Got %v closest peers to cid %v from %v(%v)\n: ", len(peers), peer.ID(key).String(), p.String(), agentVersion)
 					for _, peer := range peers {
-						fmt.Printf("%v ", peer.ID.String())
+						msg = fmt.Sprintf("%v %v", msg, peer.ID.String())
 					}
-					fmt.Println()
+					fmt.Println(msg)
 				}
 
 				// For DHT query command
@@ -537,7 +538,8 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 			}
 			if err != nil {
 				if log {
-					fmt.Printf("Error putting provider record for cid %v to %v(%v) (%v) time taken: %v\n", key.String(), p.String(), agentVersion, err.Error(), time.Since(start))
+					errStr := strings.ReplaceAll(err.Error(), "\n", " ")
+					fmt.Printf("Error putting provider record for cid %v to %v(%v) [%v] time taken: %v\n", key.String(), p.String(), agentVersion, errStr, time.Since(start))
 				}
 				logger.Debug(err)
 			} else {
@@ -550,7 +552,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 					} else {
 						msg := fmt.Sprintf("Got %v provider records back from %v(%v) after a successful put: ", len(pvds), p.String(), agentVersion)
 						for _, pvd := range pvds {
-							msg = fmt.Sprintf("%v %v", msg, pvd.ID)
+							msg = fmt.Sprintf("%v %v", msg, pvd.ID.String())
 						}
 						fmt.Println(msg)
 					}
