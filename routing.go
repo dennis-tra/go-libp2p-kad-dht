@@ -623,7 +623,7 @@ func (dht *IpfsDHT) FindProvidersAsync(ctx context.Context, key cid.Cid, count i
 	return peerOut
 }
 
-type Notifier struct {
+type Notifee struct {
 	provider     *peer.AddrInfo
 	peerstore    peerstore.Peerstore
 	key          multihash.Multihash
@@ -631,13 +631,13 @@ type Notifier struct {
 	originPeerAv string
 }
 
-func (n2 Notifier) Listen(n network.Network, multiaddr ma.Multiaddr) {
+func (n2 Notifee) Listen(n network.Network, multiaddr ma.Multiaddr) {
 }
 
-func (n2 Notifier) ListenClose(n network.Network, multiaddr ma.Multiaddr) {
+func (n2 Notifee) ListenClose(n network.Network, multiaddr ma.Multiaddr) {
 }
 
-func (n2 Notifier) Connected(n network.Network, conn network.Conn) {
+func (n2 Notifee) Connected(n network.Network, conn network.Conn) {
 	if conn.RemotePeer().String() == n2.provider.ID.String() {
 		agentVersion2 := "n.a."
 		if agent, err := n2.peerstore.Get(n2.provider.ID, "AgentVersion"); err == nil {
@@ -647,7 +647,7 @@ func (n2 Notifier) Connected(n network.Network, conn network.Conn) {
 	}
 }
 
-func (n2 Notifier) Disconnected(n network.Network, conn network.Conn) {
+func (n2 Notifee) Disconnected(n network.Network, conn network.Conn) {
 	if conn.RemotePeer().String() == n2.provider.ID.String() {
 		agentVersion2 := "n.a."
 		if agent, err := n2.peerstore.Get(n2.provider.ID, "AgentVersion"); err == nil {
@@ -657,10 +657,10 @@ func (n2 Notifier) Disconnected(n network.Network, conn network.Conn) {
 	}
 }
 
-func (n2 Notifier) OpenedStream(n network.Network, stream network.Stream) {
+func (n2 Notifee) OpenedStream(n network.Network, stream network.Stream) {
 }
 
-func (n2 Notifier) ClosedStream(n network.Network, stream network.Stream) {
+func (n2 Notifee) ClosedStream(n network.Network, stream network.Stream) {
 }
 
 func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash.Multihash, count int, peerOut chan peer.AddrInfo) {
@@ -724,7 +724,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	if log {
 		fmt.Printf("%s: Start searching providers for cid %v\n", time.Now().Format(time.RFC3339Nano), key.B58String())
 	}
-	notifiers := map[string]*Notifier{}
+	notifiers := map[string]*Notifee{}
 	var lk sync.RWMutex
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(key),
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
@@ -759,17 +759,19 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 				if log {
 					fmt.Printf("%s: Found provider %v for cid %v from %v(%v)\n", time.Now().Format(time.RFC3339Nano), prov.ID.String(), key.B58String(), p.String(), agentVersion)
 				}
-				notifier := &Notifier{
-					originPeer:   p,
-					originPeerAv: agentVersion,
-					key:          key,
-					provider:     prov,
-					peerstore:    dht.peerstore,
-				}
 				lk.Lock()
-				notifiers[prov.ID.String()] = notifier
+				if _, found := notifiers[prov.ID.String()]; !found {
+					notifier := &Notifee{
+						originPeer:   p,
+						originPeerAv: agentVersion,
+						key:          key,
+						provider:     prov,
+						peerstore:    dht.peerstore,
+					}
+					notifiers[prov.ID.String()] = notifier
+					dht.host.Network().Notify(notifier)
+				}
 				lk.Unlock()
-				dht.host.Network().Notify(notifier)
 				logger.Debugf("got provider: %s", prov)
 				if ps.TryAdd(prov.ID) {
 					logger.Debugf("using provider: %s", prov)
@@ -810,6 +812,10 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		},
 	)
 
+	for _, notifier := range notifiers {
+		dht.host.Network().StopNotify(notifier)
+	}
+
 	if log {
 		fmt.Printf("%s: Finished searching providers for cid %v ctx error: %v\n", time.Now().Format(time.RFC3339Nano), key.B58String(), ctx.Err())
 		activeTestingLock.Lock()
@@ -817,9 +823,6 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		activeTestingLock.Unlock()
 	}
 
-	for _, notifier := range notifiers {
-		dht.host.Network().StopNotify(notifier)
-	}
 	if err == nil && ctx.Err() == nil {
 		dht.refreshRTIfNoShortcut(kb.ConvertKey(string(key)), lookupRes)
 	}
