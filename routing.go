@@ -792,11 +792,11 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			// Give closer peers back to the query to be queried
 			logger.Debugf("got closer peers: %d %s", len(closest), closest)
 			if log {
-				fmt.Printf("%s: Got %v closest peers to cid %v from %v(%v): ", time.Now().Format(time.RFC3339Nano), len(closest), key.B58String(), p.String(), agentVersion)
+				msg := fmt.Sprintf("%s: Got %v closest peers to cid %v from %v(%v): ", time.Now().Format(time.RFC3339Nano), len(closest), key.B58String(), p.String(), agentVersion)
 				for _, peer := range closest {
-					fmt.Printf("%v ", peer.ID.String())
+					msg = fmt.Sprintf("%v ", peer.ID.String())
 				}
-				fmt.Println()
+				fmt.Println(msg)
 			}
 
 			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
