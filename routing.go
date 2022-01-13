@@ -794,7 +794,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			if log {
 				msg := fmt.Sprintf("%s: Got %v closest peers to cid %v from %v(%v): ", time.Now().Format(time.RFC3339Nano), len(closest), key.B58String(), p.String(), agentVersion)
 				for _, peer := range closest {
-					msg = fmt.Sprintf("%v ", peer.ID.String())
+					msg += fmt.Sprintf("%v ", peer.ID.String())
 				}
 				fmt.Println(msg)
 			}
