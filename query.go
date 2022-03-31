@@ -21,8 +21,10 @@ import (
 // ErrNoPeersQueried is returned when we failed to connect to any peers.
 var ErrNoPeersQueried = errors.New("failed to query any peers")
 
-type queryFn func(context.Context, peer.ID) ([]*peer.AddrInfo, error)
-type stopFn func() bool
+type (
+	queryFn func(context.Context, peer.ID) ([]*peer.AddrInfo, error)
+	stopFn  func() bool
+)
 
 // query represents a single DHT query.
 type query struct {
@@ -157,10 +159,11 @@ func (dht *IpfsDHT) runQuery(ctx context.Context, target string, queryFn queryFn
 		return nil, kb.ErrLookupFailure
 	}
 
+	queryID := uuid.New()
 	q := &query{
-		id:         uuid.New(),
+		id:         queryID,
 		key:        target,
-		ctx:        ctx,
+		ctx:        context.WithValue(ctx, QueryIdCtxKey{}, queryID),
 		dht:        dht,
 		queryPeers: qpeerset.NewQueryPeerset(target),
 		seedPeers:  seedPeers,
@@ -502,10 +505,11 @@ func (dht *IpfsDHT) dialPeer(ctx context.Context, p peer.ID) error {
 		return nil
 	}
 
-	logger.Debug("not connected. dialing.")
+	logger.Debug("not connefcted. dialing.")
 	routing.PublishQueryEvent(ctx, &routing.QueryEvent{
-		Type: routing.DialingPeer,
-		ID:   p,
+		Type:  routing.DialingPeer,
+		ID:    p,
+		Extra: ctx.Value(QueryIdCtxKey{}).(uuid.UUID).String(),
 	})
 
 	pi := peer.AddrInfo{ID: p}

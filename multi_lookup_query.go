@@ -24,6 +24,8 @@ type multiLookupQuery struct {
 	stop          *atomic.Bool
 }
 
+type QueryIdCtxKey struct{}
+
 func (dht *IpfsDHT) newMultiLookupQuery(ctx context.Context, key string, seedPeerLists ...[]peer.ID) *multiLookupQuery {
 	queryCtx, cancelQueries := context.WithCancel(ctx)
 	queryCtx, eventsChan := RegisterForLookupEvents(ctx)
@@ -73,7 +75,7 @@ func (dht *IpfsDHT) newMultiLookupQuery(ctx context.Context, key string, seedPee
 		query := &query{
 			id:         queryIDs[i],
 			key:        key,
-			ctx:        queryCtx,
+			ctx:        context.WithValue(queryCtx, QueryIdCtxKey{}, queryIDs[i]),
 			dht:        dht,
 			queryPeers: qpeerset.NewQueryPeerset(key),
 			seedPeers:  seedPeers,
