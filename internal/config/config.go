@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+
 	ds "github.com/ipfs/go-datastore"
 	dssync "github.com/ipfs/go-datastore/sync"
 	"github.com/ipfs/go-ipns"
@@ -46,6 +48,7 @@ type Config struct {
 	EnableValues       bool
 	ProviderStore      providers.ProviderStore
 	QueryPeerFilter    QueryFilterFunc
+	MessageSenderFunc  func(h host.Host, protos []protocol.ID) pb.MessageSender
 
 	RoutingTable struct {
 		RefreshQueryTimeout time.Duration

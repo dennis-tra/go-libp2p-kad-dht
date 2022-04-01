@@ -31,13 +31,14 @@ type QueryPeerset struct {
 
 	// all known peers and their query states
 	statesLk sync.RWMutex
-	states   map[peer.ID]*queryPeerState
+	states   map[peer.ID]*QueryPeerState
 }
 
-type queryPeerState struct {
-	distance   *big.Int
-	state      PeerState
-	referredBy peer.ID
+type QueryPeerState struct {
+	ID         peer.ID
+	Distance   *big.Int
+	State      PeerState
+	ReferredBy peer.ID
 }
 
 // NewQueryPeerset creates a new empty set of peers.
@@ -45,7 +46,7 @@ type queryPeerState struct {
 func NewQueryPeerset(key string) *QueryPeerset {
 	return &QueryPeerset{
 		key:    ks.XORKeySpace.Key([]byte(key)),
-		states: map[peer.ID]*queryPeerState{},
+		states: map[peer.ID]*QueryPeerState{},
 	}
 }
 
@@ -65,10 +66,11 @@ func (qp *QueryPeerset) TryAdd(p, referredBy peer.ID) bool {
 		return false
 	}
 
-	qp.states[p] = &queryPeerState{
-		distance:   qp.distanceToKey(p),
-		state:      PeerHeard,
-		referredBy: referredBy,
+	qp.states[p] = &QueryPeerState{
+		ID:         p,
+		Distance:   qp.distanceToKey(p),
+		State:      PeerHeard,
+		ReferredBy: referredBy,
 	}
 
 	return true
@@ -78,7 +80,7 @@ func (qp *QueryPeerset) TryAdd(p, referredBy peer.ID) bool {
 // If p is not in the peerset, SetState panics.
 func (qp *QueryPeerset) SetState(p peer.ID, s PeerState) {
 	qp.statesLk.Lock()
-	qp.states[p].state = s
+	qp.states[p].State = s
 	qp.statesLk.Unlock()
 }
 
@@ -87,7 +89,7 @@ func (qp *QueryPeerset) SetState(p peer.ID, s PeerState) {
 func (qp *QueryPeerset) GetState(p peer.ID) PeerState {
 	qp.statesLk.RLock()
 	defer qp.statesLk.RUnlock()
-	return qp.states[p].state
+	return qp.states[p].State
 }
 
 // GetReferrer returns the peer that referred us to the peer p.
@@ -95,7 +97,7 @@ func (qp *QueryPeerset) GetState(p peer.ID) PeerState {
 func (qp *QueryPeerset) GetReferrer(p peer.ID) peer.ID {
 	qp.statesLk.RLock()
 	defer qp.statesLk.RUnlock()
-	return qp.states[p].referredBy
+	return qp.states[p].ReferredBy
 }
 
 // GetClosestNInStates returns the closest to the key peers, which are in one of the given states.
@@ -112,13 +114,13 @@ func (qp *QueryPeerset) GetClosestNInStates(n int, states ...PeerState) []peer.I
 
 	results := []peer.ID{}
 	for p, state := range qp.states {
-		if _, ok := m[state.state]; ok {
+		if _, ok := m[state.State]; ok {
 			results = append(results, p)
 		}
 	}
 
 	sort.Slice(results, func(i, j int) bool {
-		di, dj := qp.states[results[i]].distance, qp.states[results[j]].distance
+		di, dj := qp.states[results[i]].Distance, qp.states[results[j]].Distance
 		return di.Cmp(dj) == -1
 	})
 
@@ -149,7 +151,7 @@ func (qp *QueryPeerset) NumWaiting() int {
 // regardless of their state.
 // TODO: Remove duplication with GetIntersectionNotInState. However, this function isn't used anyways...
 func (qp *QueryPeerset) GetIntersection(others ...*QueryPeerset) []peer.ID {
-	var smallest map[peer.ID]*queryPeerState
+	var smallest map[peer.ID]*QueryPeerState
 	var smallestIdx int
 
 	all := append(others, qp)
@@ -189,7 +191,7 @@ OUTER:
 // and none of the peer sets tracks a peer as PeerUnreachable. This means all peers in the resulting list
 // can either be in the states PeerHeard, PeerWaiting, or PeerQueried.
 func (qp *QueryPeerset) GetIntersectionNotInState(state PeerState, others ...*QueryPeerset) []peer.ID {
-	var smallest map[peer.ID]*queryPeerState
+	var smallest map[peer.ID]*QueryPeerState
 	var smallestIdx int
 
 	all := append(others, qp)
@@ -214,11 +216,11 @@ func (qp *QueryPeerset) GetIntersectionNotInState(state PeerState, others ...*Qu
 	results := []peer.ID{}
 OUTER:
 	for p, ps := range smallest {
-		if ps.state == state {
+		if ps.State == state {
 			continue
 		}
 		for _, other := range all {
-			if qpstate, found := other.states[p]; !found || qpstate.state == state {
+			if qpstate, found := other.states[p]; !found || qpstate.State == state {
 				continue OUTER
 			}
 		}
@@ -226,4 +228,15 @@ OUTER:
 	}
 
 	return results
+}
+
+func (qp *QueryPeerset) AllStates() []QueryPeerState {
+	qp.statesLk.RLock()
+	defer qp.statesLk.RUnlock()
+
+	allStates := []QueryPeerState{}
+	for _, state := range qp.states {
+		allStates = append(allStates, *state)
+	}
+	return allStates
 }

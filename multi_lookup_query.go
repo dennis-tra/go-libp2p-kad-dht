@@ -13,6 +13,8 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 )
 
+type QueryIdCtxKey struct{}
+
 // multiLookupQuery represents multiple DHT queries.
 type multiLookupQuery struct {
 	// the overarching query context. This context is used to forward
@@ -85,10 +87,11 @@ func (dht *IpfsDHT) runMultiLookupQuery(ctx context.Context, target string, quer
 
 	// for each list of seed peers initialize a query.
 	for i, seedPeers := range seedPeerLists {
+		qid := uuid.New()
 		mlq.queries[i] = &query{
-			id:         uuid.New(),
+			id:         qid,
 			key:        target,
-			ctx:        ctx,
+			ctx:        context.WithValue(ctx, QueryIdCtxKey{}, qid),
 			dht:        dht,
 			queryPeers: qpeerset.NewQueryPeerset(target),
 			seedPeers:  seedPeers,

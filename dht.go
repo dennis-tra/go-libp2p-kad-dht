@@ -17,8 +17,8 @@ import (
 
 	"github.com/libp2p/go-libp2p-kad-dht/internal"
 	dhtcfg "github.com/libp2p/go-libp2p-kad-dht/internal/config"
-	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
 	"github.com/libp2p/go-libp2p-kad-dht/metrics"
+	"github.com/libp2p/go-libp2p-kad-dht/net"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
 	"github.com/libp2p/go-libp2p-kad-dht/rtrefresh"
@@ -190,7 +190,11 @@ func New(ctx context.Context, h host.Host, options ...Option) (*IpfsDHT, error) 
 	dht.disableFixLowPeers = cfg.DisableFixLowPeers
 
 	dht.Validator = cfg.Validator
-	dht.msgSender = net.NewMessageSenderImpl(h, dht.protocols)
+	if cfg.MessageSenderFunc == nil {
+		dht.msgSender = net.NewMessageSenderImpl(h, dht.protocols)
+	} else {
+		dht.msgSender = cfg.MessageSenderFunc(h, dht.protocols)
+	}
 	dht.protoMessenger, err = pb.NewProtocolMessenger(dht.msgSender)
 	if err != nil {
 		return nil, err
@@ -384,7 +388,6 @@ func makeRoutingTable(dht *IpfsDHT, cfg dhtcfg.Config, maxLastSuccessfulOutbound
 		df, err := peerdiversity.NewFilter(dht.rtPeerDiversityFilter, "rt/diversity", func(p peer.ID) int {
 			return kb.CommonPrefixLen(dht.selfKey, kb.ConvertPeerID(p))
 		})
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to construct peer diversity filter: %w", err)
 		}
@@ -446,7 +449,6 @@ func (dht *IpfsDHT) populatePeers(_ goprocess.Process) {
 	if !dht.disableFixLowPeers {
 		dht.proc.Go(dht.fixLowPeersRoutine)
 	}
-
 }
 
 // fixLowPeersRouting manages simultaneous requests to fixLowPeers
@@ -464,7 +466,6 @@ func (dht *IpfsDHT) fixLowPeersRoutine(proc goprocess.Process) {
 
 		dht.fixLowPeers(dht.Context())
 	}
-
 }
 
 // fixLowPeers tries to get more peers into the routing table if we're below the threshold

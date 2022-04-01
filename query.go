@@ -159,10 +159,11 @@ func (dht *IpfsDHT) runQuery(ctx context.Context, target string, queryFn queryFn
 		return nil, kb.ErrLookupFailure
 	}
 
+	qid := uuid.New()
 	q := &query{
-		id:         uuid.New(),
+		id:         qid,
 		key:        target,
-		ctx:        ctx,
+		ctx:        context.WithValue(ctx, QueryIdCtxKey{}, qid),
 		dht:        dht,
 		queryPeers: qpeerset.NewQueryPeerset(target),
 		seedPeers:  seedPeers,
@@ -506,8 +507,9 @@ func (dht *IpfsDHT) dialPeer(ctx context.Context, p peer.ID) error {
 
 	logger.Debug("not connected. dialing.")
 	routing.PublishQueryEvent(ctx, &routing.QueryEvent{
-		Type: routing.DialingPeer,
-		ID:   p,
+		Type:  routing.DialingPeer,
+		ID:    p,
+		Extra: ctx.Value(QueryIdCtxKey{}).(uuid.UUID).String(),
 	})
 
 	pi := peer.AddrInfo{ID: p}
