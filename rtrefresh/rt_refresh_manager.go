@@ -3,20 +3,27 @@ package rtrefresh
 import (
 	"context"
 	"fmt"
+	"math"
+	"math/big"
+	"strings"
 	"sync"
 	"time"
 
+	"gonum.org/v1/gonum/mat"
+
+	"gonum.org/v1/gonum/stat"
+
+	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
-
 	kbucket "github.com/libp2p/go-libp2p-kbucket"
-
-	"github.com/hashicorp/go-multierror"
-	logging "github.com/ipfs/go-log"
-	"github.com/multiformats/go-base32"
+	ks "github.com/whyrusleeping/go-keyspace"
 )
 
-var logger = logging.Logger("dht/RtRefreshManager")
+var (
+	logger         = logging.Logger("dht/RtRefreshManager")
+	keyspaceMax, _ = new(big.Int).SetString(strings.Repeat("F", 64), 16)
+)
 
 const (
 	peerPingTimeout = 10 * time.Second
@@ -38,10 +45,10 @@ type RtRefreshManager struct {
 	dhtPeerId peer.ID
 	rt        *kbucket.RoutingTable
 
-	enableAutoRefresh   bool                                        // should run periodic refreshes ?
-	refreshKeyGenFnc    func(cpl uint) (string, error)              // generate the key for the query to refresh this cpl
-	refreshQueryFnc     func(ctx context.Context, key string) error // query to run for a refresh.
-	refreshQueryTimeout time.Duration                               // timeout for one refresh query
+	enableAutoRefresh   bool                                                     // should run periodic refreshes ?
+	refreshKeyGenFnc    func(cpl uint) (string, error)                           // generate the key for the query to refresh this cpl
+	refreshQueryFnc     func(ctx context.Context, key string) ([]peer.ID, error) // query to run for a refresh.
+	refreshQueryTimeout time.Duration                                            // timeout for one refresh query
 
 	// interval between two periodic refreshes.
 	// also, a cpl wont be refreshed if the time since it was last refreshed
@@ -52,15 +59,27 @@ type RtRefreshManager struct {
 	triggerRefresh chan *triggerRefreshReq // channel to write refresh requests to.
 
 	refreshDoneCh chan struct{} // write to this channel after every refresh
+
+	// Order statistic distances
+	osDistancesLk sync.RWMutex
+	osDistances   map[int][]float64
+	osDistancesTs map[int][]time.Time
 }
 
 func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool,
 	refreshKeyGenFnc func(cpl uint) (string, error),
-	refreshQueryFnc func(ctx context.Context, key string) error,
+	refreshQueryFnc func(ctx context.Context, key string) ([]peer.ID, error),
 	refreshQueryTimeout time.Duration,
 	refreshInterval time.Duration,
 	successfulOutboundQueryGracePeriod time.Duration,
 	refreshDoneCh chan struct{}) (*RtRefreshManager, error) {
+
+	osDistances := map[int][]float64{}
+	osDistancesTs := map[int][]time.Time{}
+	for i := 0; i < 20; i++ { // TODO: take "20" from routing table?
+		osDistances[i] = []float64{}
+		osDistancesTs[i] = []time.Time{}
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return &RtRefreshManager{
@@ -80,6 +99,10 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 
 		triggerRefresh: make(chan *triggerRefreshReq),
 		refreshDoneCh:  refreshDoneCh,
+
+		osDistancesLk: sync.RWMutex{},
+		osDistances:   osDistances,
+		osDistancesTs: osDistancesTs,
 	}, nil
 }
 
@@ -298,13 +321,39 @@ func (r *RtRefreshManager) runRefreshDHTQuery(key string) error {
 	queryCtx, cancel := context.WithTimeout(r.ctx, r.refreshQueryTimeout)
 	defer cancel()
 
-	err := r.refreshQueryFnc(queryCtx, key)
+	peers, err := r.refreshQueryFnc(queryCtx, key)
+
+	r.trackClosestPeersDistances(key, peers)
+	r.PrintNetworkSize()
 
 	if err == nil || (err == context.DeadlineExceeded && queryCtx.Err() == context.DeadlineExceeded) {
 		return nil
 	}
 
 	return err
+}
+
+type osDistance struct {
+	distance  float64
+	timestamp time.Time
+}
+
+func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.ID) {
+	r.osDistancesLk.Lock()
+	defer r.osDistancesLk.Unlock()
+
+	msg := []string{}
+	kskey := ks.XORKeySpace.Key([]byte(key))
+	for i, p := range peers {
+		fDist := new(big.Float).SetInt(ks.XORKeySpace.Key([]byte(p)).Distance(kskey))
+		normedDist, _ := new(big.Float).Quo(fDist, new(big.Float).SetInt(keyspaceMax)).Float64()
+
+		r.osDistances[i] = append(r.osDistances[i], normedDist)
+		r.osDistancesTs[i] = append(r.osDistancesTs[i], time.Now())
+
+		msg = append(msg, fmt.Sprintf("%.10f (%d)", normedDist, i+1))
+	}
+	fmt.Println(time.Now().Format(time.RFC3339Nano)+": New distances:", strings.Join(msg, ","))
 }
 
 type loggableRawKeyString string
@@ -319,4 +368,126 @@ func (lk loggableRawKeyString) String() string {
 	encStr := base32.RawStdEncoding.EncodeToString([]byte(k))
 
 	return encStr
+}
+
+func (r *RtRefreshManager) garbageCollectOsDistances() {
+	r.osDistancesLk.Lock()
+	defer r.osDistancesLk.Unlock()
+
+	for i := 0; i < 20; i++ { // TODO: take "20" from routing table?
+		for j, s := 0, len(r.osDistancesTs[i]); j < s; j++ {
+			if time.Since(r.osDistancesTs[i][j]) < 2*time.Hour { // TODO: configurable
+				continue
+			}
+
+			r.osDistances[i] = append(r.osDistances[i][:j], r.osDistances[i][j+1:]...)
+			r.osDistancesTs[i] = append(r.osDistancesTs[i][:j], r.osDistancesTs[i][j+1:]...)
+			s--
+			j--
+		}
+	}
+}
+
+func (r *RtRefreshManager) NetworkSize() (float64, float64) {
+	r.garbageCollectOsDistances()
+
+	r.osDistancesLk.Lock()
+	defer r.osDistancesLk.Unlock()
+
+	xs := make([]float64, 20)
+	ys := make([]float64, 20)
+	yerrs := make([]float64, 20)
+	sampleCount := 0
+
+	for i := 0; i < 20; i++ {
+		sampleCount += len(r.osDistances[i])
+		y, yerr := stat.MeanStdDev(r.osDistances[i], nil)
+		xs[i] = float64(i + 1)
+		ys[i] = y
+		yerrs[i] = yerr
+	}
+
+	beta, betaErr := linearFit(xs, ys, yerrs)
+	r2 := stat.RSquared(xs, ys, nil, 0, beta)
+
+	fmt.Printf("Linear Regression: beta: %.10f +- %.10f, r2: %.4f | Network: %.2f | 1σ: %.2f (%.1f%%) | 2σ: %.2f (%.1f%%) | 3σ: %.2f (%.1f%%) | Samples: %d\n",
+		beta,
+		betaErr,
+		r2,
+		1/beta-1,
+		betaErr/(beta*beta),
+		100*(betaErr/(beta*beta))/(1/beta-1),
+		2*betaErr/(beta*beta),
+		100*(2*betaErr/(beta*beta))/(1/beta-1),
+		3*betaErr/(beta*beta),
+		100*(3*betaErr/(beta*beta))/(1/beta-1),
+		sampleCount,
+	)
+
+	return 1/beta - 1, betaErr / (beta * beta)
+}
+
+func linearFit(xs []float64, ys []float64, yerrs []float64) (float64, float64) {
+	weights := make([]float64, len(yerrs))
+	for i, yerr := range yerrs {
+		weights[i] = 1 / yerr
+	}
+
+	_, beta := stat.LinearRegression(xs, ys, weights, true)
+
+	vanderMat := vandermonde(xs, 1)
+	weightMat := mat.NewDense(2, len(xs), append(weights, weights...))
+
+	vanderMat.MulElem(vanderMat, weightMat.T())
+
+	// intermediate scale
+	var iscale mat.Dense
+	iscale.MulElem(vanderMat, vanderMat)
+
+	row := []float64{
+		math.Sqrt(mat.Sum(iscale.ColView(0))),
+		math.Sqrt(mat.Sum(iscale.ColView(1))),
+	}
+	scales := []float64{}
+	for range xs {
+		scales = append(scales, row...)
+	}
+
+	scale := mat.NewDense(len(xs), 2, scales)
+	vanderMat.DivElem(vanderMat, scale)
+
+	var c mat.Dense
+	c.Mul(vanderMat.T(), vanderMat)
+
+	var i mat.Dense
+	err := i.Inverse(&c)
+	if err != nil {
+		panic(err)
+	}
+
+	outer := mat.NewDense(2, 2, []float64{
+		scale.At(0, 0) * scale.At(0, 0), scale.At(0, 0) * scale.At(0, 1),
+		scale.At(1, 0) * scale.At(0, 0), scale.At(1, 0) * scale.At(0, 1),
+	})
+
+	i.DivElem(&i, outer)
+
+	return beta, math.Sqrt(i.At(0, 0))
+}
+
+// vandermonde constructs a matrix of the following shape:
+// a = 4.5, 7.7, 2.1
+// degree = 1
+// 4.5 1
+// 7.7 1
+// 2.1 1
+func vandermonde(a []float64, degree int) *mat.Dense {
+	d := degree + 1
+	x := mat.NewDense(len(a), d, nil)
+	for i := range a {
+		for j, p := d-1, 1.; j >= 0; j, p = j-1, p*a[i] {
+			x.Set(i, j, p)
+		}
+	}
+	return x
 }

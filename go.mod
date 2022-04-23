@@ -38,4 +38,7 @@ require (
 	go.opentelemetry.io/otel v0.20.0
 	go.opentelemetry.io/otel/trace v0.20.0
 	go.uber.org/zap v1.18.1
+	golang.org/x/exp v0.0.0-20220414153411-bcd21879b8fd // indirect
+	golang.org/x/tools v0.1.10 // indirect
+	gonum.org/v1/gonum v0.11.0
 )

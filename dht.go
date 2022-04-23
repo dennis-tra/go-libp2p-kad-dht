@@ -364,9 +364,9 @@ func makeRtRefreshManager(dht *IpfsDHT, cfg dhtcfg.Config, maxLastSuccessfulOutb
 		return string(p), err
 	}
 
-	queryFnc := func(ctx context.Context, key string) error {
-		_, err := dht.GetClosestPeers(ctx, key)
-		return err
+	queryFnc := func(ctx context.Context, key string) ([]peer.ID, error) {
+		_, closet, err := dht.GetClosestPeers(ctx, key)
+		return closet, err
 	}
 
 	r, err := rtrefresh.NewRtRefreshManager(

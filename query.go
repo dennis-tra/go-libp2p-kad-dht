@@ -69,6 +69,7 @@ type lookupWithFollowupResult struct {
 	// indicates that neither the lookup nor the followup has been prematurely terminated by an external condition such
 	// as context cancellation or the stop function being called.
 	completed bool
+	closest   []peer.ID
 }
 
 // runLookupWithFollowup executes the lookup on the target using the given query function and stopping when either the
@@ -238,11 +239,14 @@ func (q *query) constructLookupResult(target kb.ID) *lookupWithFollowupResult {
 		sortedPeers = sortedPeers[:q.dht.bucketSize]
 	}
 
+	closest := q.queryPeers.GetClosestNInStates(q.dht.bucketSize, qpeerset.PeerHeard, qpeerset.PeerWaiting, qpeerset.PeerQueried, qpeerset.PeerUnreachable)
+
 	// return the top K not unreachable peers as well as their states at the end of the query
 	res := &lookupWithFollowupResult{
 		peers:     sortedPeers,
 		state:     make([]qpeerset.PeerState, len(sortedPeers)),
 		completed: completed,
+		closest:   closest,
 	}
 
 	for i, p := range sortedPeers {

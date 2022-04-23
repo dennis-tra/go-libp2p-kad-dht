@@ -15,9 +15,9 @@ import (
 //
 // If the context is canceled, this function will return the context error along
 // with the closest K peers it has found so far.
-func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID, error) {
+func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID, []peer.ID, error) {
 	if key == "" {
-		return nil, fmt.Errorf("can't lookup empty key")
+		return nil, nil, fmt.Errorf("can't lookup empty key")
 	}
 	// TODO: I can break the interface! return []peer.ID
 	lookupRes, err := dht.runLookupWithFollowup(ctx, key,
@@ -51,7 +51,7 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 		func() bool { return false },
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	if ctx.Err() == nil && lookupRes.completed {
@@ -59,5 +59,5 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 		dht.routingTable.ResetCplRefreshedAtForID(kb.ConvertKey(key), time.Now())
 	}
 
-	return lookupRes.peers, ctx.Err()
+	return lookupRes.peers, lookupRes.closest, ctx.Err()
 }

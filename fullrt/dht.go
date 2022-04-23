@@ -31,7 +31,7 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/crawler"
 	"github.com/libp2p/go-libp2p-kad-dht/internal"
 	internalConfig "github.com/libp2p/go-libp2p-kad-dht/internal/config"
-	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
+	"github.com/libp2p/go-libp2p-kad-dht/net"
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
 	kb "github.com/libp2p/go-libp2p-kbucket"
@@ -643,7 +643,7 @@ func (dht *FullRT) updatePeerValues(ctx context.Context, key string, val []byte,
 	fixupRec := record.MakePutRecord(key, val)
 	for _, p := range peers {
 		go func(p peer.ID) {
-			//TODO: Is this possible?
+			// TODO: Is this possible?
 			if p == dht.h.ID() {
 				err := dht.putLocal(ctx, key, fixupRec)
 				if err != nil {

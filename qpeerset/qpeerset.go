@@ -3,6 +3,7 @@ package qpeerset
 import (
 	"math/big"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -23,6 +24,8 @@ const (
 	PeerUnreachable
 )
 
+var keyspaceMax, _ = new(big.Int).SetString(strings.Repeat("F", 64), 16)
+
 // QueryPeerset maintains the state of a Kademlia asynchronous lookup.
 // The lookup state is a set of peers, each labeled with a peer state.
 type QueryPeerset struct {
@@ -32,6 +35,8 @@ type QueryPeerset struct {
 	// all known peers and their query states
 	statesLk sync.RWMutex
 	states   map[peer.ID]*QueryPeerState
+
+	belowCount int
 }
 
 type QueryPeerState struct {
@@ -71,6 +76,14 @@ func (qp *QueryPeerset) TryAdd(p, referredBy peer.ID) bool {
 		Distance:   qp.distanceToKey(p),
 		State:      PeerHeard,
 		ReferredBy: referredBy,
+	}
+
+	fDist := new(big.Float).SetInt(qp.distanceToKey(p))
+	threshold := new(big.Float).Mul(big.NewFloat(20.0/(18990+1)), new(big.Float).SetInt(keyspaceMax))
+
+	if fDist.Cmp(threshold) <= 0 {
+		// fmt.Printf("No: %d, Key: %s, Peer: %s - BELOW THRESHOLD\n", qp.belowCount, hex.EncodeToString(qp.key.Original)[:20], p.String()[:16])
+		qp.belowCount += 1
 	}
 
 	return true
