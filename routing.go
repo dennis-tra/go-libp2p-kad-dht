@@ -335,7 +335,7 @@ func (dht *IpfsDHT) getValues(ctx context.Context, key string, stopQuery chan st
 
 				return peers, nil
 			},
-			func() bool {
+			func(*qpeerset.QueryPeerset) bool {
 				select {
 				case <-stopQuery:
 					return true
@@ -439,6 +439,56 @@ func (dht *IpfsDHT) ProvideMultiQuery(ctx context.Context, key cid.Cid) error {
 		return context.DeadlineExceeded
 	}
 	return ctx.Err()
+}
+
+func (dht *IpfsDHT) ProvideEstimator(ctx context.Context, key cid.Cid) (err error) {
+	if !dht.enableProviders {
+		return routing.ErrNotSupported
+	} else if !key.Defined() {
+		return fmt.Errorf("invalid cid: undefined")
+	}
+	keyMH := key.Hash()
+	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
+
+	// add self locally
+	if err := dht.providerStore.AddProvider(ctx, keyMH, peer.AddrInfo{ID: dht.self}); err != nil {
+		return err
+	}
+
+	closerCtx := ctx
+	if deadline, ok := ctx.Deadline(); ok {
+		now := time.Now()
+		timeout := deadline.Sub(now)
+
+		if timeout < 0 {
+			// timed out
+			return context.DeadlineExceeded
+		} else if timeout < 10*time.Second {
+			// Reserve 10% for the final put.
+			deadline = deadline.Add(-timeout / 10)
+		} else {
+			// Otherwise, reserve a second (we'll already be
+			// connected so this should be fast).
+			deadline = deadline.Add(-time.Second)
+		}
+		var cancel context.CancelFunc
+		closerCtx, cancel = context.WithDeadline(ctx, deadline)
+		defer cancel()
+	}
+
+	err = dht.GetClosestPeersEstimator(closerCtx, string(keyMH))
+	switch err {
+	case context.DeadlineExceeded:
+		// If the _inner_ deadline has been exceeded but the _outer_
+		// context is still fine, provide the value to the closest peers
+		// we managed to find, even if they're not the _actual_ closest peers.
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	default:
+		return err
+	}
 }
 
 // Provide makes this node announce that it can provide a value for the given key
@@ -630,7 +680,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 			return closest, nil
 		},
-		func() bool {
+		func(*qpeerset.QueryPeerset) bool {
 			return !findAll && ps.Size() >= count
 		},
 	)
@@ -676,7 +726,7 @@ func (dht *IpfsDHT) FindPeer(ctx context.Context, id peer.ID) (_ peer.AddrInfo, 
 
 			return peers, err
 		},
-		func() bool {
+		func(*qpeerset.QueryPeerset) bool {
 			return dht.host.Network().Connectedness(id) == network.Connected
 		},
 	)

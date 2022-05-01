@@ -23,7 +23,7 @@ var ErrNoPeersQueried = errors.New("failed to query any peers")
 
 type (
 	queryFn func(context.Context, peer.ID) ([]*peer.AddrInfo, error)
-	stopFn  func() bool
+	stopFn  func(peerset *qpeerset.QueryPeerset) bool
 )
 
 // query represents a single DHT query.
@@ -65,6 +65,7 @@ type query struct {
 type lookupWithFollowupResult struct {
 	peers []peer.ID            // the top K not unreachable peers at the end of the query
 	state []qpeerset.PeerState // the peer states at the end of the query
+	set   *qpeerset.QueryPeerset
 
 	// indicates that neither the lookup nor the followup has been prematurely terminated by an external condition such
 	// as context cancellation or the stop function being called.
@@ -102,7 +103,7 @@ func (dht *IpfsDHT) runLookupWithFollowup(ctx context.Context, target string, qu
 	}
 
 	// return if the lookup has been externally stopped
-	if ctx.Err() != nil || stopFn() {
+	if ctx.Err() != nil || stopFn(lookupRes.set) {
 		lookupRes.completed = false
 		return lookupRes, nil
 	}
@@ -125,7 +126,7 @@ processFollowUp:
 		select {
 		case <-doneCh:
 			followupsCompleted++
-			if stopFn() {
+			if stopFn(lookupRes.set) {
 				cancelFollowUp()
 				if i < len(queryPeers)-1 {
 					lookupRes.completed = false
@@ -244,6 +245,7 @@ func (q *query) constructLookupResult(target kb.ID) *lookupWithFollowupResult {
 	// return the top K not unreachable peers as well as their states at the end of the query
 	res := &lookupWithFollowupResult{
 		peers:     sortedPeers,
+		set:       q.queryPeers,
 		state:     make([]qpeerset.PeerState, len(sortedPeers)),
 		completed: completed,
 		closest:   closest,
@@ -334,7 +336,7 @@ func (q *query) spawnQuery(ctx context.Context, cause peer.ID, queryPeer peer.ID
 
 func (q *query) isReadyToTerminate(ctx context.Context, nPeersToQuery int) (bool, LookupTerminationReason, []peer.ID) {
 	// give the application logic a chance to terminate
-	if q.stopFn() {
+	if q.stopFn(q.queryPeers) {
 		return true, LookupStopped, nil
 	}
 	if q.isStarvationTermination() {

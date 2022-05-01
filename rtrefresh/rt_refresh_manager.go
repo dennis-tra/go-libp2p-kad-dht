@@ -9,15 +9,15 @@ import (
 	"sync"
 	"time"
 
-	"gonum.org/v1/gonum/mat"
-
-	"gonum.org/v1/gonum/stat"
-
+	"github.com/hashicorp/go-multierror"
 	logging "github.com/ipfs/go-log"
 	"github.com/libp2p/go-libp2p-core/host"
 	"github.com/libp2p/go-libp2p-core/peer"
 	kbucket "github.com/libp2p/go-libp2p-kbucket"
+	"github.com/multiformats/go-base32"
 	ks "github.com/whyrusleeping/go-keyspace"
+	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/gonum/stat"
 )
 
 var (
@@ -45,10 +45,11 @@ type RtRefreshManager struct {
 	dhtPeerId peer.ID
 	rt        *kbucket.RoutingTable
 
-	enableAutoRefresh   bool                                                     // should run periodic refreshes ?
-	refreshKeyGenFnc    func(cpl uint) (string, error)                           // generate the key for the query to refresh this cpl
-	refreshQueryFnc     func(ctx context.Context, key string) ([]peer.ID, error) // query to run for a refresh.
-	refreshQueryTimeout time.Duration                                            // timeout for one refresh query
+	enableAutoRefresh   bool                                                         // should run periodic refreshes ?
+	refreshKeyGenFnc    func(cpl uint) (string, error)                               // generate the key for the query to refresh this cpl
+	refreshQueryFnc     func(ctx context.Context, key string) ([]peer.ID, error)     // query to run for a refresh.
+	netSizeHookFnc      func(mean float64, avg float64, r2 float64, sampleCount int) // called every time a new network size estimate is available
+	refreshQueryTimeout time.Duration                                                // timeout for one refresh query
 
 	// interval between two periodic refreshes.
 	// also, a cpl wont be refreshed if the time since it was last refreshed
@@ -69,6 +70,7 @@ type RtRefreshManager struct {
 func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool,
 	refreshKeyGenFnc func(cpl uint) (string, error),
 	refreshQueryFnc func(ctx context.Context, key string) ([]peer.ID, error),
+	netSizeHookFnc func(float64, float64, float64, int),
 	refreshQueryTimeout time.Duration,
 	refreshInterval time.Duration,
 	successfulOutboundQueryGracePeriod time.Duration,
@@ -76,7 +78,7 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 
 	osDistances := map[int][]float64{}
 	osDistancesTs := map[int][]time.Time{}
-	for i := 0; i < 20; i++ { // TODO: take "20" from routing table?
+	for i := 0; i < 20; i++ { // TODO: take "20" from config
 		osDistances[i] = []float64{}
 		osDistancesTs[i] = []time.Time{}
 	}
@@ -92,6 +94,7 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 		enableAutoRefresh: autoRefresh,
 		refreshKeyGenFnc:  refreshKeyGenFnc,
 		refreshQueryFnc:   refreshQueryFnc,
+		netSizeHookFnc:    netSizeHookFnc,
 
 		refreshQueryTimeout:                refreshQueryTimeout,
 		refreshInterval:                    refreshInterval,
@@ -322,20 +325,15 @@ func (r *RtRefreshManager) runRefreshDHTQuery(key string) error {
 	defer cancel()
 
 	peers, err := r.refreshQueryFnc(queryCtx, key)
-
 	r.trackClosestPeersDistances(key, peers)
-	r.PrintNetworkSize()
+
+	r.netSizeHookFnc(r.NetworkSize())
 
 	if err == nil || (err == context.DeadlineExceeded && queryCtx.Err() == context.DeadlineExceeded) {
 		return nil
 	}
 
 	return err
-}
-
-type osDistance struct {
-	distance  float64
-	timestamp time.Time
 }
 
 func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.ID) {
@@ -353,7 +351,6 @@ func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.I
 
 		msg = append(msg, fmt.Sprintf("%.10f (%d)", normedDist, i+1))
 	}
-	fmt.Println(time.Now().Format(time.RFC3339Nano)+": New distances:", strings.Join(msg, ","))
 }
 
 type loggableRawKeyString string
@@ -374,7 +371,7 @@ func (r *RtRefreshManager) garbageCollectOsDistances() {
 	r.osDistancesLk.Lock()
 	defer r.osDistancesLk.Unlock()
 
-	for i := 0; i < 20; i++ { // TODO: take "20" from routing table?
+	for i := 0; i < 20; i++ { // TODO: take "20" from config
 		for j, s := 0, len(r.osDistancesTs[i]); j < s; j++ {
 			if time.Since(r.osDistancesTs[i][j]) < 2*time.Hour { // TODO: configurable
 				continue
@@ -388,18 +385,18 @@ func (r *RtRefreshManager) garbageCollectOsDistances() {
 	}
 }
 
-func (r *RtRefreshManager) NetworkSize() (float64, float64) {
+func (r *RtRefreshManager) NetworkSize() (float64, float64, float64, int) {
 	r.garbageCollectOsDistances()
 
 	r.osDistancesLk.Lock()
 	defer r.osDistancesLk.Unlock()
 
-	xs := make([]float64, 20)
-	ys := make([]float64, 20)
-	yerrs := make([]float64, 20)
+	xs := make([]float64, 20)    // TODO: take "20" from config
+	ys := make([]float64, 20)    // TODO: take "20" from config
+	yerrs := make([]float64, 20) // TODO: take "20" from config
 	sampleCount := 0
 
-	for i := 0; i < 20; i++ {
+	for i := 0; i < 20; i++ { // TODO: take "20" from config
 		sampleCount += len(r.osDistances[i])
 		y, yerr := stat.MeanStdDev(r.osDistances[i], nil)
 		xs[i] = float64(i + 1)
@@ -424,7 +421,7 @@ func (r *RtRefreshManager) NetworkSize() (float64, float64) {
 		sampleCount,
 	)
 
-	return 1/beta - 1, betaErr / (beta * beta)
+	return 1/beta - 1, betaErr / (beta * beta), r2, sampleCount
 }
 
 func linearFit(xs []float64, ys []float64, yerrs []float64) (float64, float64) {
@@ -434,6 +431,9 @@ func linearFit(xs []float64, ys []float64, yerrs []float64) (float64, float64) {
 	}
 
 	_, beta := stat.LinearRegression(xs, ys, weights, true)
+
+	// The below calculation is taken from numpy.polyfit.
+	// https://github.com/numpy/numpy/blob/v1.22.0/numpy/lib/polynomial.py#L452-L697
 
 	vanderMat := vandermonde(xs, 1)
 	weightMat := mat.NewDense(2, len(xs), append(weights, weights...))

@@ -47,6 +47,7 @@ type Config struct {
 	EnableProviders    bool
 	EnableValues       bool
 	ProviderStore      providers.ProviderStore
+	NetSizeHookFnc     func(float64, float64, float64, int)
 	QueryPeerFilter    QueryFilterFunc
 	MessageSenderFunc  func(h host.Host, protos []protocol.ID) pb.MessageSender
 
@@ -118,6 +119,7 @@ var Defaults = func(o *Config) error {
 	o.RoutingTable.AutoRefresh = true
 	o.RoutingTable.PeerFilter = EmptyRTFilter
 	o.MaxRecordAge = time.Hour * 36
+	o.NetSizeHookFnc = func(float64, float64, float64, int) {}
 
 	o.BucketSize = defaultBucketSize
 	o.Concurrency = 10

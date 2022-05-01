@@ -47,6 +47,14 @@ func ProviderStore(ps providers.ProviderStore) Option {
 	}
 }
 
+// NetworkSizeHook .
+func NetworkSizeHook(nsh func(float64, float64, float64, int)) Option {
+	return func(c *dhtcfg.Config) error {
+		c.NetSizeHookFnc = nsh
+		return nil
+	}
+}
+
 // RoutingTableLatencyTolerance sets the maximum acceptable latency for peers
 // in the routing table's cluster.
 func RoutingTableLatencyTolerance(latency time.Duration) Option {

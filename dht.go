@@ -148,6 +148,8 @@ type IpfsDHT struct {
 
 	// configuration variables for tests
 	testAddressUpdateProcessing bool
+
+	netSizeHookFnc func(float64, float64, float64, int)
 }
 
 // Assert that IPFS assumptions about interfaces aren't broken. These aren't a
@@ -188,6 +190,7 @@ func New(ctx context.Context, h host.Host, options ...Option) (*IpfsDHT, error) 
 	dht.enableProviders = cfg.EnableProviders
 	dht.enableValues = cfg.EnableValues
 	dht.disableFixLowPeers = cfg.DisableFixLowPeers
+	dht.netSizeHookFnc = cfg.NetSizeHookFnc
 
 	dht.Validator = cfg.Validator
 	if cfg.MessageSenderFunc == nil {
@@ -373,6 +376,7 @@ func makeRtRefreshManager(dht *IpfsDHT, cfg dhtcfg.Config, maxLastSuccessfulOutb
 		dht.host, dht.routingTable, cfg.RoutingTable.AutoRefresh,
 		keyGenFnc,
 		queryFnc,
+		cfg.NetSizeHookFnc,
 		cfg.RoutingTable.RefreshQueryTimeout,
 		cfg.RoutingTable.RefreshInterval,
 		maxLastSuccessfulOutboundThreshold,

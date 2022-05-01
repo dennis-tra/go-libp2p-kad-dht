@@ -7,6 +7,7 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/routing"
+	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 
 	kb "github.com/libp2p/go-libp2p-kbucket"
 )
@@ -48,7 +49,7 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 
 			return peers, err
 		},
-		func() bool { return false },
+		func(*qpeerset.QueryPeerset) bool { return false },
 	)
 	if err != nil {
 		return nil, nil, err

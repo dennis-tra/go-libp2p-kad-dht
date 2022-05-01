@@ -98,8 +98,8 @@ func (dht *IpfsDHT) runMultiLookupQuery(ctx context.Context, target string, quer
 			peerTimes:  make(map[peer.ID]time.Duration),
 			terminated: false,
 			queryFn:    queryFn,
-			stopFn: func() bool {
-				return stopFn() || len(mlq.getQueriesIntersection()) >= mlq.intersThresh
+			stopFn: func(peerset *qpeerset.QueryPeerset) bool {
+				return stopFn(peerset) || len(mlq.getQueriesIntersection()) >= mlq.intersThresh
 			},
 		}
 	}
