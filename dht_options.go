@@ -48,7 +48,7 @@ func ProviderStore(ps providers.ProviderStore) Option {
 }
 
 // NetworkSizeHook .
-func NetworkSizeHook(nsh func(float64, float64, float64, int)) Option {
+func NetworkSizeHook(nsh func(mean float64, avg float64, r2 float64, sampleCount int, cpl int, distances []float64, key string)) Option {
 	return func(c *dhtcfg.Config) error {
 		c.NetSizeHookFnc = nsh
 		return nil

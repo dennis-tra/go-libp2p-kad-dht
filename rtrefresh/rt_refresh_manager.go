@@ -2,6 +2,7 @@ package rtrefresh
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
@@ -48,7 +49,7 @@ type RtRefreshManager struct {
 	enableAutoRefresh   bool                                                         // should run periodic refreshes ?
 	refreshKeyGenFnc    func(cpl uint) (string, error)                               // generate the key for the query to refresh this cpl
 	refreshQueryFnc     func(ctx context.Context, key string) ([]peer.ID, error)     // query to run for a refresh.
-	netSizeHookFnc      func(mean float64, avg float64, r2 float64, sampleCount int) // called every time a new network size estimate is available
+	netSizeHookFnc      func(float64, float64, float64, int, int, []float64, string) // called every time a new network size estimate is available
 	refreshQueryTimeout time.Duration                                                // timeout for one refresh query
 
 	// interval between two periodic refreshes.
@@ -62,15 +63,16 @@ type RtRefreshManager struct {
 	refreshDoneCh chan struct{} // write to this channel after every refresh
 
 	// Order statistic distances
-	osDistancesLk sync.RWMutex
-	osDistances   map[int][]float64
-	osDistancesTs map[int][]time.Time
+	osDistancesLk      sync.RWMutex
+	osDistances        map[int][]float64
+	osDistancesTs      map[int][]time.Time
+	osDistancesWeights map[int][]float64
 }
 
 func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool,
 	refreshKeyGenFnc func(cpl uint) (string, error),
 	refreshQueryFnc func(ctx context.Context, key string) ([]peer.ID, error),
-	netSizeHookFnc func(float64, float64, float64, int),
+	netSizeHookFnc func(mean float64, avg float64, r2 float64, sampleCount int, cpl int, distances []float64, key string),
 	refreshQueryTimeout time.Duration,
 	refreshInterval time.Duration,
 	successfulOutboundQueryGracePeriod time.Duration,
@@ -78,9 +80,11 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 
 	osDistances := map[int][]float64{}
 	osDistancesTs := map[int][]time.Time{}
+	osDistancesWeights := map[int][]float64{}
 	for i := 0; i < 20; i++ { // TODO: take "20" from config
 		osDistances[i] = []float64{}
 		osDistancesTs[i] = []time.Time{}
+		osDistancesWeights[i] = []float64{}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -103,9 +107,10 @@ func NewRtRefreshManager(h host.Host, rt *kbucket.RoutingTable, autoRefresh bool
 		triggerRefresh: make(chan *triggerRefreshReq),
 		refreshDoneCh:  refreshDoneCh,
 
-		osDistancesLk: sync.RWMutex{},
-		osDistances:   osDistances,
-		osDistancesTs: osDistancesTs,
+		osDistancesLk:      sync.RWMutex{},
+		osDistances:        osDistances,
+		osDistancesTs:      osDistancesTs,
+		osDistancesWeights: osDistancesWeights,
 	}, nil
 }
 
@@ -325,9 +330,9 @@ func (r *RtRefreshManager) runRefreshDHTQuery(key string) error {
 	defer cancel()
 
 	peers, err := r.refreshQueryFnc(queryCtx, key)
-	r.trackClosestPeersDistances(key, peers)
+	distances := r.trackClosestPeersDistances(key, peers)
 
-	r.netSizeHookFnc(r.NetworkSize())
+	r.netSizeHookFnc(r.NetworkSize(key, distances))
 
 	if err == nil || (err == context.DeadlineExceeded && queryCtx.Err() == context.DeadlineExceeded) {
 		return nil
@@ -336,21 +341,24 @@ func (r *RtRefreshManager) runRefreshDHTQuery(key string) error {
 	return err
 }
 
-func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.ID) {
+func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.ID) []float64 {
 	r.osDistancesLk.Lock()
 	defer r.osDistancesLk.Unlock()
 
-	msg := []string{}
+	cpl := kbucket.CommonPrefixLen(kbucket.ConvertKey(key), kbucket.ConvertPeerID(r.h.ID()))
+
+	distances := make([]float64, len(peers))
 	kskey := ks.XORKeySpace.Key([]byte(key))
 	for i, p := range peers {
 		fDist := new(big.Float).SetInt(ks.XORKeySpace.Key([]byte(p)).Distance(kskey))
 		normedDist, _ := new(big.Float).Quo(fDist, new(big.Float).SetInt(keyspaceMax)).Float64()
 
+		distances[i] = normedDist
 		r.osDistances[i] = append(r.osDistances[i], normedDist)
 		r.osDistancesTs[i] = append(r.osDistancesTs[i], time.Now())
-
-		msg = append(msg, fmt.Sprintf("%.10f (%d)", normedDist, i+1))
+		r.osDistancesWeights[i] = append(r.osDistancesWeights[i], 1.0/float64(cpl+1)) // Weigh distance estimates based on their CPLs
 	}
+	return distances
 }
 
 type loggableRawKeyString string
@@ -379,14 +387,17 @@ func (r *RtRefreshManager) garbageCollectOsDistances() {
 
 			r.osDistances[i] = append(r.osDistances[i][:j], r.osDistances[i][j+1:]...)
 			r.osDistancesTs[i] = append(r.osDistancesTs[i][:j], r.osDistancesTs[i][j+1:]...)
+			r.osDistancesWeights[i] = append(r.osDistancesWeights[i][:j], r.osDistancesWeights[i][j+1:]...)
 			s--
 			j--
 		}
 	}
 }
 
-func (r *RtRefreshManager) NetworkSize() (float64, float64, float64, int) {
+func (r *RtRefreshManager) NetworkSize(key string, distances []float64) (float64, float64, float64, int, int, []float64, string) {
 	r.garbageCollectOsDistances()
+
+	cpl := kbucket.CommonPrefixLen(kbucket.ConvertKey(key), kbucket.ConvertPeerID(r.h.ID()))
 
 	r.osDistancesLk.Lock()
 	defer r.osDistancesLk.Unlock()
@@ -398,7 +409,7 @@ func (r *RtRefreshManager) NetworkSize() (float64, float64, float64, int) {
 
 	for i := 0; i < 20; i++ { // TODO: take "20" from config
 		sampleCount += len(r.osDistances[i])
-		y, yerr := stat.MeanStdDev(r.osDistances[i], nil)
+		y, yerr := stat.MeanStdDev(r.osDistances[i], r.osDistancesWeights[i])
 		xs[i] = float64(i + 1)
 		ys[i] = y
 		yerrs[i] = yerr
@@ -407,21 +418,7 @@ func (r *RtRefreshManager) NetworkSize() (float64, float64, float64, int) {
 	beta, betaErr := linearFit(xs, ys, yerrs)
 	r2 := stat.RSquared(xs, ys, nil, 0, beta)
 
-	fmt.Printf("Linear Regression: beta: %.10f +- %.10f, r2: %.4f | Network: %.2f | 1σ: %.2f (%.1f%%) | 2σ: %.2f (%.1f%%) | 3σ: %.2f (%.1f%%) | Samples: %d\n",
-		beta,
-		betaErr,
-		r2,
-		1/beta-1,
-		betaErr/(beta*beta),
-		100*(betaErr/(beta*beta))/(1/beta-1),
-		2*betaErr/(beta*beta),
-		100*(2*betaErr/(beta*beta))/(1/beta-1),
-		3*betaErr/(beta*beta),
-		100*(3*betaErr/(beta*beta))/(1/beta-1),
-		sampleCount,
-	)
-
-	return 1/beta - 1, betaErr / (beta * beta), r2, sampleCount
+	return 1/beta - 1, betaErr / (beta * beta), r2, sampleCount, cpl, distances, hex.EncodeToString([]byte(key))
 }
 
 func linearFit(xs []float64, ys []float64, yerrs []float64) (float64, float64) {

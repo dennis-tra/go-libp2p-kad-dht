@@ -149,7 +149,7 @@ type IpfsDHT struct {
 	// configuration variables for tests
 	testAddressUpdateProcessing bool
 
-	netSizeHookFnc func(float64, float64, float64, int)
+	netSizeHookFnc func(mean float64, avg float64, r2 float64, sampleCount int, cpl int, distances []float64, key string)
 }
 
 // Assert that IPFS assumptions about interfaces aren't broken. These aren't a

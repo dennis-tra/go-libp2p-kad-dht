@@ -37,7 +37,7 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 		return fmt.Errorf("can't lookup empty key")
 	}
 
-	netSize, _, _, _ := dht.rtRefreshManager.NetworkSize()
+	netSize, _, _, _, _, _, _ := dht.rtRefreshManager.NetworkSize("", nil)
 
 	aps := addProviderState{
 		peerStates: map[peer.ID]AddProviderRPCState{},
