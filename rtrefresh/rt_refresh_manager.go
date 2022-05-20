@@ -347,6 +347,15 @@ func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.I
 
 	cpl := kbucket.CommonPrefixLen(kbucket.ConvertKey(key), kbucket.ConvertPeerID(r.h.ID()))
 
+	// Weigh distance estimates based on their CPLs
+	// Bucket Level: 20 -> 1/2^0 -> 1
+	// Bucket Level: 19 -> 1/2^1 -> 1/2
+	// Bucket Level: 18 -> 1/2^2 -> 1/4
+	// Bucket Level: 17 -> 1/2^3 -> 1/8
+	// Bucket Level: 10 -> 1/2^10 -> 1/1024
+	bucketLevel := r.rt.NPeersForCpl(uint(cpl))
+	weight := 1.0 / math.Pow(2, float64(20-bucketLevel))
+
 	distances := make([]float64, len(peers))
 	kskey := ks.XORKeySpace.Key([]byte(key))
 	for i, p := range peers {
@@ -356,7 +365,7 @@ func (r *RtRefreshManager) trackClosestPeersDistances(key string, peers []peer.I
 		distances[i] = normedDist
 		r.osDistances[i] = append(r.osDistances[i], normedDist)
 		r.osDistancesTs[i] = append(r.osDistancesTs[i], time.Now())
-		r.osDistancesWeights[i] = append(r.osDistancesWeights[i], 1.0/float64(cpl+1)) // Weigh distance estimates based on their CPLs
+		r.osDistancesWeights[i] = append(r.osDistancesWeights[i], weight)
 	}
 	return distances
 }
