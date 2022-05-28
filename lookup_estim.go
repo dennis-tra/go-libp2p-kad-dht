@@ -7,13 +7,11 @@ import (
 	"strings"
 	"sync"
 
-	"gonum.org/v1/gonum/stat"
-
-	ks "github.com/whyrusleeping/go-keyspace"
-
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/routing"
 	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
+	ks "github.com/whyrusleeping/go-keyspace"
+	"gonum.org/v1/gonum/stat"
 )
 
 var keyspaceMax, _ = new(big.Int).SetString(strings.Repeat("F", 64), 16)
@@ -42,8 +40,24 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 	aps := addProviderState{
 		peerStates: map[peer.ID]AddProviderRPCState{},
 	}
+
 	var wg sync.WaitGroup
 	kskey := ks.XORKeySpace.Key([]byte(key))
+
+	putCtx, putCancel := context.WithCancel(ctx)
+
+	wg.Add(1)
+	doneChan := make(chan struct{})
+	go func() {
+		dones := 0
+		for range doneChan {
+			dones += 1
+			if dones >= dht.bucketSize {
+				break
+			}
+		}
+		wg.Done()
+	}()
 
 	lookupRes, err := dht.runLookupWithFollowup(ctx, key,
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
@@ -76,10 +90,14 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 		func(qps *qpeerset.QueryPeerset) bool {
 			closest := qps.GetClosestInStates(qpeerset.PeerHeard, qpeerset.PeerWaiting, qpeerset.PeerQueried)
 
+			// routing table error in percent (stale routing table entries)
+			rtErrPct := 5
+			threshold := float64(dht.bucketSize) * (1 + float64(rtErrPct)/100)
+
 			aps.peerStatesLk.Lock()
 			defer aps.peerStatesLk.Unlock()
 
-			for i, p := range closest {
+			for _, p := range closest {
 
 				if _, found := aps.peerStates[p]; found {
 					continue
@@ -88,14 +106,12 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 				fDist := new(big.Float).SetInt(ks.XORKeySpace.Key([]byte(p)).Distance(kskey))
 				normedDist, _ := new(big.Float).Quo(fDist, new(big.Float).SetInt(keyspaceMax)).Float64()
 
-				threshold := (float64(i) + 1) / (netSize + 1)
 				if normedDist > threshold {
 					break // closest is ordered, so we can break here
 				}
 
-				wg.Add(1)
 				go func(p2 peer.ID) {
-					err := dht.protoMessenger.PutProvider(ctx, p2, []byte(key), dht.host)
+					err := dht.protoMessenger.PutProvider(putCtx, p2, []byte(key), dht.host)
 					aps.peerStatesLk.Lock()
 					if err != nil {
 						aps.peerStates[p] = Failure
@@ -103,7 +119,11 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 						aps.peerStates[p] = Success
 					}
 					aps.peerStatesLk.Unlock()
-					wg.Done()
+
+					select {
+					case doneChan <- struct{}{}:
+					default:
+					}
 				}(p)
 
 				aps.peerStates[p] = Sent
@@ -116,7 +136,7 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 				}
 			}
 
-			if waitingAndSuccessCount >= dht.bucketSize {
+			if float64(waitingAndSuccessCount) >= threshold {
 				fmt.Printf("Stopping due to waitingAndSuccessCount %d >= %d\n", waitingAndSuccessCount, dht.bucketSize)
 				return true
 			}
@@ -127,14 +147,14 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 				fDist := new(big.Float).SetInt(ks.XORKeySpace.Key([]byte(p)).Distance(kskey))
 				normedDist, _ := new(big.Float).Quo(fDist, new(big.Float).SetInt(keyspaceMax)).Float64()
 				closestDistances = append(closestDistances, normedDist)
-				if i >= dht.bucketSize {
+				if float64(i) >= threshold {
 					break
 				}
 			}
 
 			mean := stat.Mean(closestDistances, nil)
-			if mean < float64(dht.bucketSize)/(netSize+1) {
-				fmt.Printf("Stopping due to mean %f < %f\n", mean, float64(dht.bucketSize)/(netSize+1))
+			if mean < threshold/(netSize+1) {
+				fmt.Printf("Stopping due to mean %f < %f\n", mean, threshold/(netSize+1))
 				return true
 			}
 
@@ -142,6 +162,8 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 		},
 	)
 	if err != nil {
+		close(doneChan)
+		putCancel()
 		return err
 	}
 
@@ -154,18 +176,22 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 		fDist := new(big.Float).SetInt(ks.XORKeySpace.Key([]byte(p)).Distance(kskey))
 		normedDist, _ := new(big.Float).Quo(fDist, new(big.Float).SetInt(keyspaceMax)).Float64()
 
-		wg.Add(1)
 		go func(p2 peer.ID) {
 			fmt.Println("Putting Provider Record to", p2.String(), normedDist)
-			if err = dht.protoMessenger.PutProvider(ctx, p2, []byte(key), dht.host); err != nil {
+			if err = dht.protoMessenger.PutProvider(putCtx, p2, []byte(key), dht.host); err != nil {
 				fmt.Println("error put provider", err)
 			}
-			wg.Done()
+			select {
+			case doneChan <- struct{}{}:
+			default:
+			}
 		}(p)
 	}
 	aps.peerStatesLk.RUnlock()
 
 	wg.Wait()
+	close(doneChan)
+	putCancel()
 
 	return ctx.Err()
 }
