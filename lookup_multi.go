@@ -14,12 +14,12 @@ import (
 //
 // If the context is canceled, this function will return the context error along
 // with the closest K peers it has found so far.
-func (dht *IpfsDHT) GetClosestPeersMultiLookup(ctx context.Context, key string) ([]peer.ID, error) {
+func (dht *IpfsDHT) GetClosestPeersMultiLookup(ctx context.Context, key string, concurrency int) ([]peer.ID, error) {
 	if key == "" {
 		return nil, fmt.Errorf("can't lookup empty key")
 	}
 
-	peers, err := dht.runMultiLookup(ctx, key,
+	peers, err := dht.runMultiLookup(ctx, key, concurrency,
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
 			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 				Type: routing.SendingQuery,

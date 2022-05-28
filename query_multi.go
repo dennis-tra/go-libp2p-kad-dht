@@ -32,13 +32,14 @@ type multiLookupQuery struct {
 	intersThresh int
 }
 
-func (dht *IpfsDHT) runMultiLookup(ctx context.Context, target string, queryFn queryFn, stopFn stopFn) ([]peer.ID, error) {
+func (dht *IpfsDHT) runMultiLookup(ctx context.Context, target string, concurrency int, queryFn queryFn, stopFn stopFn) ([]peer.ID, error) {
 	// Convert key to a Kademlia compatible ID (hash it again with SHA256)
 	kadKey := kb.ConvertKey(target)
 
 	// Calculate seed peers
 	sortedPeers := kb.SortClosestPeers(dht.routingTable.ListPeers(), kadKey)
-	if len(sortedPeers) < 2*dht.bucketSize {
+
+	if len(sortedPeers) < concurrency*dht.bucketSize {
 		routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 			Type:  routing.QueryError,
 			Extra: kb.ErrLookupFailure.Error(),
@@ -46,10 +47,15 @@ func (dht *IpfsDHT) runMultiLookup(ctx context.Context, target string, queryFn q
 		return nil, kb.ErrLookupFailure
 	}
 
-	closestPeers := sortedPeers[:dht.bucketSize]
-	furthestPeers := sortedPeers[len(sortedPeers)-dht.bucketSize:]
+	seedPeerLists := [][]peer.ID{}
+	for i := 0; i < concurrency; i++ {
+		spacing := (len(sortedPeers) - concurrency*dht.bucketSize) / (concurrency - 1)
+		leftIdx := i * (spacing + dht.bucketSize)
+		rightIdx := leftIdx + dht.bucketSize
+		seedPeerLists = append(seedPeerLists, sortedPeers[leftIdx:rightIdx])
+	}
 
-	lookupRes, err := dht.runMultiLookupQuery(ctx, target, queryFn, stopFn, closestPeers, furthestPeers)
+	lookupRes, err := dht.runMultiLookupQuery(ctx, target, queryFn, stopFn, seedPeerLists...)
 	if err != nil {
 		return nil, err
 	}

@@ -370,7 +370,7 @@ func (dht *IpfsDHT) refreshRTIfNoShortcut(key kb.ID, lookupRes *lookupWithFollow
 
 // ProvideMultiQuery makes this node announce that it can provide a value for the given key by starting multiple
 // queries for the closest peers in the XOR space and wait until the result sets intersect.
-func (dht *IpfsDHT) ProvideMultiQuery(ctx context.Context, key cid.Cid) error {
+func (dht *IpfsDHT) ProvideMultiQuery(ctx context.Context, key cid.Cid, concurrency int) error {
 	if !dht.enableProviders {
 		return routing.ErrNotSupported
 	} else if !key.Defined() {
@@ -406,7 +406,7 @@ func (dht *IpfsDHT) ProvideMultiQuery(ctx context.Context, key cid.Cid) error {
 	}
 
 	var exceededDeadline bool
-	peers, err := dht.GetClosestPeersMultiLookup(closerCtx, string(keyMH))
+	peers, err := dht.GetClosestPeersMultiLookup(closerCtx, string(keyMH), concurrency)
 	switch err {
 	case context.DeadlineExceeded:
 		// If the _inner_ deadline has been exceeded but the _outer_

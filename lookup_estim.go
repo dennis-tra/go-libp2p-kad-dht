@@ -109,8 +109,6 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 				aps.peerStates[p] = Sent
 			}
 
-			shouldStop := false
-
 			waitingAndSuccessCount := 0
 			for _, s := range aps.peerStates {
 				if s == Sent || s == Success {
@@ -120,7 +118,7 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 
 			if waitingAndSuccessCount >= dht.bucketSize {
 				fmt.Printf("Stopping due to waitingAndSuccessCount %d >= %d\n", waitingAndSuccessCount, dht.bucketSize)
-				shouldStop = true
+				return true
 			}
 
 			closestDistances := []float64{}
@@ -137,10 +135,10 @@ func (dht *IpfsDHT) GetClosestPeersEstimator(ctx context.Context, key string) er
 			mean := stat.Mean(closestDistances, nil)
 			if mean < float64(dht.bucketSize)/(netSize+1) {
 				fmt.Printf("Stopping due to mean %f < %f\n", mean, float64(dht.bucketSize)/(netSize+1))
-				shouldStop = true
+				return true
 			}
 
-			return shouldStop
+			return false
 		},
 	)
 	if err != nil {
