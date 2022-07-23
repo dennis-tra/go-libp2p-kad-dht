@@ -7,6 +7,7 @@ import (
 
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-core/routing"
+	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 
 	kb "github.com/libp2p/go-libp2p-kbucket"
 )
@@ -21,31 +22,7 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 		return nil, fmt.Errorf("can't lookup empty key")
 	}
 	//TODO: I can break the interface! return []peer.ID
-	lookupRes, err := dht.runLookupWithFollowup(ctx, key,
-		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
-			// For DHT query command
-			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
-				Type: routing.SendingQuery,
-				ID:   p,
-			})
-
-			peers, err := dht.protoMessenger.GetClosestPeers(ctx, p, peer.ID(key))
-			if err != nil {
-				logger.Debugf("error getting closer peers: %s", err)
-				return nil, err
-			}
-
-			// For DHT query command
-			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
-				Type:      routing.PeerResponse,
-				ID:        p,
-				Responses: peers,
-			})
-
-			return peers, err
-		},
-		func() bool { return false },
-	)
+	lookupRes, err := dht.runLookupWithFollowup(ctx, key, dht.pmGetClosestPeers(key), func(*qpeerset.QueryPeerset) bool { return false })
 
 	if err != nil {
 		return nil, err
@@ -62,4 +39,35 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 	}
 
 	return lookupRes.peers, ctx.Err()
+}
+
+// pmGetClosestPeers is the protocol messenger version of the GetClosestPeer queryFn.
+func (dht *IpfsDHT) pmGetClosestPeers(key string) queryFn {
+	return func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
+		// For DHT query command
+		routing.PublishQueryEvent(ctx, &routing.QueryEvent{
+			Type: routing.SendingQuery,
+			ID:   p,
+		})
+
+		peers, err := dht.protoMessenger.GetClosestPeers(ctx, p, peer.ID(key))
+		if err != nil {
+			logger.Debugf("error getting closer peers: %s", err)
+			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
+				Type:  routing.QueryError,
+				ID:    p,
+				Extra: err.Error(),
+			})
+			return nil, err
+		}
+
+		// For DHT query command
+		routing.PublishQueryEvent(ctx, &routing.QueryEvent{
+			Type:      routing.PeerResponse,
+			ID:        p,
+			Responses: peers,
+		})
+
+		return peers, err
+	}
 }
