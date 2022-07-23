@@ -22,7 +22,7 @@ import (
 var ErrNoPeersQueried = errors.New("failed to query any peers")
 
 type queryFn func(context.Context, peer.ID) ([]*peer.AddrInfo, error)
-type stopFn func(*qpeerset.QueryPeerset) bool
+type stopFn func(context.Context, *qpeerset.QueryPeerset) bool
 
 // query represents a single DHT query.
 type query struct {
@@ -100,7 +100,7 @@ func (dht *IpfsDHT) runLookupWithFollowup(ctx context.Context, target string, qu
 	}
 
 	// return if the lookup has been externally stopped
-	if ctx.Err() != nil || stopFn(qps) {
+	if ctx.Err() != nil || stopFn(ctx, qps) {
 		lookupRes.completed = false
 		return lookupRes, nil
 	}
@@ -123,7 +123,7 @@ processFollowUp:
 		select {
 		case <-doneCh:
 			followupsCompleted++
-			if stopFn(qps) {
+			if stopFn(ctx, qps) {
 				cancelFollowUp()
 				if i < len(queryPeers)-1 {
 					lookupRes.completed = false
@@ -331,7 +331,7 @@ func (q *query) spawnQuery(ctx context.Context, cause peer.ID, queryPeer peer.ID
 
 func (q *query) isReadyToTerminate(ctx context.Context, nPeersToQuery int) (bool, LookupTerminationReason, []peer.ID) {
 	// give the application logic a chance to terminate
-	if q.stopFn(q.queryPeers) {
+	if q.stopFn(ctx, q.queryPeers) {
 		return true, LookupStopped, nil
 	}
 	if q.isStarvationTermination() {
