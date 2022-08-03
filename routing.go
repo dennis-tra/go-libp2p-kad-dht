@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/libp2p/go-libp2p-kad-dht/netsize"
+	ks "github.com/whyrusleeping/go-keyspace"
+	"strings"
 	"sync"
 	"time"
 
@@ -379,6 +382,8 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	keyMH := key.Hash()
 	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
 
+	start := time.Now()
+
 	// add self locally
 	dht.providerStore.AddProvider(ctx, keyMH, peer.AddrInfo{ID: dht.self})
 	if !brdcst {
@@ -407,6 +412,13 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	}
 
 	var exceededDeadline bool
+
+	llog := func(a ...string) {
+		prefix := []string{"CLASPROV", fmt.Sprintf("%f.6", time.Since(start).Seconds()), key.String()[:16]}
+		fmt.Println(strings.Join(append(prefix, a...), ","))
+	}
+	llog("startGettingCloserPeers")
+	defer llog("return")
 	peers, err := dht.GetClosestPeers(closerCtx, string(keyMH))
 	switch err {
 	case context.DeadlineExceeded:
@@ -422,13 +434,17 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		return err
 	}
 
+	llog("doneGettingCloserPeers")
 	wg := sync.WaitGroup{}
 	for _, p := range peers {
 		wg.Add(1)
 		go func(p peer.ID) {
 			defer wg.Done()
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
+			dist := netsize.NormedDistance(ks.XORKeySpace.Key([]byte(p)), ks.XORKeySpace.Key(keyMH))
+			llog("writeProvider", p.Pretty()[:16], fmt.Sprintf("%f", dist))
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
+			llog("writeProviderDone", p.Pretty()[:16], fmt.Sprintf("%v", err != nil))
 			if err != nil {
 				logger.Debug(err)
 			}

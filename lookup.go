@@ -33,6 +33,9 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 		logger.Warnf("network size estimator track peers: %s", err)
 	}
 
+	// Trigger Network size calculation
+	dht.nsEstimator.NetworkSize()
+
 	if ctx.Err() == nil && lookupRes.completed {
 		// refresh the cpl for this key as the query was successful
 		dht.routingTable.ResetCplRefreshedAtForID(kb.ConvertKey(key), time.Now())

@@ -34,6 +34,7 @@ type Estimator struct {
 	localID    kbucket.ID
 	rt         *kbucket.RoutingTable
 	bucketSize int
+	lsqConst   float64
 
 	measurementsLk sync.RWMutex
 	measurements   map[int][]measurement
@@ -48,11 +49,14 @@ func NewEstimator(localID peer.ID, rt *kbucket.RoutingTable, bucketSize int) *Es
 		measurements[i] = []measurement{}
 	}
 
+	k := float64(bucketSize)
+
 	return &Estimator{
 		localID:      kbucket.ConvertPeerID(localID),
 		rt:           rt,
 		bucketSize:   bucketSize,
 		measurements: measurements,
+		lsqConst:     k * (k + 1) * (2*k + 1) / 6.0,
 	}
 }
 
@@ -160,8 +164,8 @@ func (e *Estimator) NetworkSize() (float64, error) {
 		}
 
 		// Calculate Average Distance
-		sumDistances := float64(0)
-		sumWeights := float64(0)
+		sumDistances := 0.0
+		sumWeights := 0.0
 		for _, m := range e.measurements[i] {
 			sumDistances += m.weight * m.distance
 			sumWeights += m.weight
@@ -169,12 +173,12 @@ func (e *Estimator) NetworkSize() (float64, error) {
 		distanceAvg := sumDistances / sumWeights
 
 		// Calculate standard deviation
-		sumWeightedDiffs := float64(0)
+		sumWeightedDiffs := 0.0
 		for _, m := range e.measurements[i] {
 			diff := m.distance - distanceAvg
 			sumWeightedDiffs += m.weight * diff * diff
 		}
-		variance := sumWeightedDiffs / (float64((observationCount - 1)) / float64(observationCount) * sumWeights)
+		variance := sumWeightedDiffs / (float64(observationCount-1) / float64(observationCount) * sumWeights)
 		distanceStd := math.Sqrt(variance)
 
 		// Track calculations
@@ -182,6 +186,12 @@ func (e *Estimator) NetworkSize() (float64, error) {
 		ys[i] = distanceAvg
 		yerrs[i] = distanceStd
 	}
+
+	lsqSum := 0.0
+	for i, yi := range ys {
+		lsqSum += float64(i+1) * yi
+	}
+	lsqEstim := e.lsqConst/lsqSum - 1
 
 	// Calculate linear regression (assumes the line goes through the origin)
 	var x2Sum, xySum float64
@@ -197,6 +207,7 @@ func (e *Estimator) NetworkSize() (float64, error) {
 	e.netSizeCache = &netSize
 
 	logger.Debugw("New network size estimation", "estimate", *e.netSizeCache)
+	fmt.Printf("%s Network size estimation | Linear Fit: %.1f | Least Square: %.1f\n", time.Now().Format(time.RFC3339), netSize, lsqEstim)
 	return netSize, nil
 }
 
