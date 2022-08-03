@@ -26,7 +26,7 @@ var (
 	MaxMeasurementAge        = 2 * time.Hour
 	MinMeasurementsThreshold = 5
 	MaxMeasurementsThreshold = 150
-	keyspaceMaxInt, _        = new(big.Int).SetString(strings.Repeat("F", 64), 16)
+	keyspaceMaxInt, _        = new(big.Int).SetString(strings.Repeat("1", 256), 2)
 	keyspaceMaxFloat         = new(big.Float).SetInt(keyspaceMaxInt)
 )
 
@@ -97,12 +97,9 @@ func (e *Estimator) Track(key string, peers []peer.ID) error {
 	maxAgeTs := now.Add(-MaxMeasurementAge)
 
 	for i, p := range peers {
-		// Map peer to the kademlia key space
-		pKey := ks.XORKeySpace.Key([]byte(p))
-
 		// Construct measurement struct
 		m := measurement{
-			distance:  NormedDistance(pKey, ksKey),
+			distance:  NormedDistance(p, ksKey),
 			weight:    weight,
 			timestamp: now,
 		}
@@ -223,8 +220,9 @@ func (e *Estimator) calcWeight(key string) float64 {
 }
 
 // NormedDistance calculates the normed XOR distance of the given keys (from 0 to 1).
-func NormedDistance(key1 ks.Key, key2 ks.Key) float64 {
-	ksDistance := new(big.Float).SetInt(key1.Distance(key2))
+func NormedDistance(p peer.ID, k ks.Key) float64 {
+	pKey := ks.XORKeySpace.Key([]byte(p))
+	ksDistance := new(big.Float).SetInt(pKey.Distance(k))
 	normedDist, _ := new(big.Float).Quo(ksDistance, keyspaceMaxFloat).Float64()
 	return normedDist
 }

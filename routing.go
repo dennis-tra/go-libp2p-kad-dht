@@ -414,7 +414,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	var exceededDeadline bool
 
 	llog := func(a ...string) {
-		prefix := []string{"CLASPROV", fmt.Sprintf("%f.6", time.Since(start).Seconds()), key.String()[:16]}
+		prefix := []string{"CLASPROV", fmt.Sprintf("%f", time.Since(start).Seconds()), key.String()}
 		fmt.Println(strings.Join(append(prefix, a...), ","))
 	}
 	llog("startGettingCloserPeers")
@@ -441,10 +441,11 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		go func(p peer.ID) {
 			defer wg.Done()
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
-			dist := netsize.NormedDistance(ks.XORKeySpace.Key([]byte(p)), ks.XORKeySpace.Key(keyMH))
-			llog("writeProvider", p.Pretty()[:16], fmt.Sprintf("%f", dist))
+
+			ksKey := ks.XORKeySpace.Key(keyMH)
+			llog("writeProvider", p.Pretty(), fmt.Sprintf("%f", netsize.NormedDistance(p, ksKey)))
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
-			llog("writeProviderDone", p.Pretty()[:16], fmt.Sprintf("%v", err != nil))
+			llog("writeProviderDone", p.Pretty(), fmt.Sprintf("%v", err != nil))
 			if err != nil {
 				logger.Debug(err)
 			}

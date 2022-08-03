@@ -64,9 +64,6 @@ type estimatorState struct {
 	// the key to provide transformed into the Kademlia key space
 	ksKey ks.Key
 
-	// routing table error in percent (stale routing table entries)
-	rtErrPct float64
-
 	// distance threshold for individual peers. If peers are closer than this number we store
 	// the provider records right away.
 	individualThreshold float64
@@ -114,7 +111,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 }
 
 func (es *estimatorState) log(a ...string) {
-	prefix := []string{"OPTRPOV", fmt.Sprintf("%.8f", time.Since(es.start).Seconds()), es.cid.String()[:16]}
+	prefix := []string{"OPTRPOV", fmt.Sprintf("%.8f", time.Since(es.start).Seconds()), es.cid.String()}
 	fmt.Println(strings.Join(append(prefix, a...), ","))
 }
 
@@ -174,7 +171,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 			continue
 		}
 
-		es.log("postWriteProvider", p.Pretty()[:16], fmt.Sprintf("%.8f", netsize.NormedDistance(ks.XORKeySpace.Key([]byte(p)), es.ksKey)))
+		es.log("postWriteProvider", p.Pretty(), fmt.Sprintf("%.8f", netsize.NormedDistance(p, es.ksKey)))
 		go es.putProviderRecord(p)
 		es.peerStates[p] = Sent
 	}
@@ -201,7 +198,7 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 	distances := make([]float64, es.dht.bucketSize)
 	for i, p := range closest {
 		// calculate distance of peer p to the target key
-		distances[i] = netsize.NormedDistance(ks.XORKeySpace.Key([]byte(p)), es.ksKey)
+		distances[i] = netsize.NormedDistance(p, es.ksKey)
 
 		// Check if we have already interacted with that peer
 		if _, found := es.peerStates[p]; found {
@@ -213,7 +210,7 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 			continue
 		}
 
-		es.log("preWriteProvider", p.Pretty()[:16], fmt.Sprintf("%.8f", distances[i]))
+		es.log("preWriteProvider", p.Pretty(), fmt.Sprintf("%.8f", distances[i]))
 		// peer is indeed very close already -> store the provider record directly with it!
 		go es.putProviderRecord(p)
 
@@ -270,7 +267,7 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 	es.peerStatesLk.Unlock()
 
 	// indicate that this ADD_PROVIDER RPC has completed
-	es.log("writeProviderDone", pid.Pretty()[:16], fmt.Sprintf("%v", err != nil))
+	es.log("writeProviderDone", pid.Pretty(), fmt.Sprintf("%v", err != nil))
 	es.doneChan <- struct{}{}
 }
 
