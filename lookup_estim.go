@@ -59,6 +59,8 @@ type estimatorState struct {
 	// the key to provide
 	key string
 
+	saveProvidersToFile bool
+
 	// the key to provide transformed into the Kademlia key space
 	ksKey ks.Key
 
@@ -223,12 +225,17 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 }
 
 func (es *estimatorState) putProviderRecord(pid peer.ID) {
-	err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
+	providerRecord, err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
 	es.peerStatesLk.Lock()
 	if err != nil {
 		es.peerStates[pid] = Failure
 	} else {
 		es.peerStates[pid] = Success
+	}
+
+	if es.saveProvidersToFile {
+		//TODO function call here
+		panic(providerRecord)
 	}
 	es.peerStatesLk.Unlock()
 
