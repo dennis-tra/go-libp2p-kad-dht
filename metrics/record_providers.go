@@ -43,13 +43,17 @@ func NewEncapsulatedJSONCidProvider(id string, cid string, address []ma.Multiadd
 
 func saveProvidersToFile(contentID string, addressInfos []peer.AddrInfo) error {
 	jsonFile, err := os.Open(filename)
+	defer jsonFile.Close()
 	if err != nil {
 		return err
 	}
 	for _, addressInfo := range addressInfos {
-		saveProviderToFile(jsonFile, addressInfo.ID.Pretty(), contentID, addressInfo.Addrs)
+		err = saveProviderToFile(jsonFile, addressInfo.ID.Pretty(), contentID, addressInfo.Addrs)
+		if err != nil {
+			return err
+		}
 	}
-	defer jsonFile.Close()
+	return nil
 }
 
 //Saves the providers along with the CIDs in a json format. In an error occurs it returns the error or else
