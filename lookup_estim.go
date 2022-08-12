@@ -225,7 +225,7 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 }
 
 func (es *estimatorState) putProviderRecord(pid peer.ID) {
-	providerRecord, err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
+	err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
 	es.peerStatesLk.Lock()
 	if err != nil {
 		es.peerStates[pid] = Failure
@@ -233,10 +233,6 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 		es.peerStates[pid] = Success
 	}
 
-	if es.saveProvidersToFile {
-		//TODO function call here
-		panic(providerRecord)
-	}
 	es.peerStatesLk.Unlock()
 
 	// indicate that this ADD_PROVIDER RPC has completed

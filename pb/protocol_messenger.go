@@ -115,7 +115,7 @@ func (pm *ProtocolMessenger) GetClosestPeers(ctx context.Context, p peer.ID, id 
 
 // PutProvider asks a peer to store that we are a provider for the given key.
 //Modified by fotis to also return the AddrInfo struct it created.If an error occurs it return an empty peer.AddrInfo struct.
-func (pm *ProtocolMessenger) PutProvider(ctx context.Context, p peer.ID, key multihash.Multihash, host host.Host) (*peer.AddrInfo, error) {
+func (pm *ProtocolMessenger) PutProvider(ctx context.Context, p peer.ID, key multihash.Multihash, host host.Host) error {
 	pi := &peer.AddrInfo{
 		ID:    host.ID(),
 		Addrs: host.Addrs(),
@@ -124,13 +124,13 @@ func (pm *ProtocolMessenger) PutProvider(ctx context.Context, p peer.ID, key mul
 	// TODO: We may want to limit the type of addresses in our provider records
 	// For example, in a WAN-only DHT prohibit sharing non-WAN addresses (e.g. 192.168.0.100)
 	if len(pi.Addrs) < 1 {
-		return &peer.AddrInfo{}, fmt.Errorf("no known addresses for self, cannot put provider")
+		return fmt.Errorf("no known addresses for self, cannot put provider")
 	}
 
 	pmes := NewMessage(Message_ADD_PROVIDER, key, 0)
 	pmes.ProviderPeers = RawPeerInfosToPBPeers([]peer.AddrInfo{*pi})
 
-	return pi, pm.m.SendMessage(ctx, p, pmes)
+	return pm.m.SendMessage(ctx, p, pmes)
 }
 
 // GetProviders asks a peer for the providers it knows of for a given key. Also returns the K closest peers to the key

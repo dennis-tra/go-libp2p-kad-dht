@@ -823,7 +823,7 @@ func (dht *FullRT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err e
 	}
 
 	successes := dht.execOnMany(ctx, func(ctx context.Context, p peer.ID) error {
-		_, err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.h)
+		err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.h)
 		return err
 	}, peers, true)
 
