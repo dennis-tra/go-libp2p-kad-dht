@@ -41,36 +41,18 @@ func NewEncapsulatedJSONCidProvider(id string, cid string, address []ma.Multiadd
 	}
 }
 
-func saveProvidersToFile(contentID string, addressInfos []peer.AddrInfo) error {
-	jsonFile, err := os.Open(filename)
-	defer jsonFile.Close()
-	if err != nil {
-		return err
-	}
-	for _, addressInfo := range addressInfos {
-		err = saveProviderToFile(jsonFile, addressInfo.ID.Pretty(), contentID, addressInfo.Addrs)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 //Saves the providers along with the CIDs in a json format. In an error occurs it returns the error or else
 //it returns nil.
 //
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
 //TODO better error handling
-func saveProviderToFile(jsonFile *os.File, peerID string, contentID string, address []ma.Multiaddr) error {
-
-	//create a new encapsulated struct
-	NewEncapsulatedJSONProviderRecord := EncapsulatedJSONProviderRecord{
-		ID:      peerID,
-		CID:     contentID,
-		Address: address,
+func saveProvidersToFile(contentID string, addressInfos []peer.AddrInfo) error {
+	jsonFile, err := os.Open(filename)
+	defer jsonFile.Close()
+	if err != nil {
+		return err
 	}
-
 	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
 	var records ProviderRecords
 
@@ -84,8 +66,17 @@ func saveProviderToFile(jsonFile *os.File, peerID string, contentID string, addr
 	if err != nil {
 		return err
 	}
-	//insert the new provider record to the slice in memory containing the provider records read
-	records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
+
+	for _, addressInfo := range addressInfos {
+		//create a new encapsulated struct
+		NewEncapsulatedJSONProviderRecord := &EncapsulatedJSONProviderRecord{
+			ID:      addressInfo.ID.Pretty(),
+			CID:     contentID,
+			Address: addressInfo.Addrs,
+		}
+		//insert the new provider record to the slice in memory containing the provider records read
+		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, *NewEncapsulatedJSONProviderRecord)
+	}
 	data, err := json.MarshalIndent(records.EncapsulatedJSONProviderRecords, "", " ")
 	if err != nil {
 		return err
