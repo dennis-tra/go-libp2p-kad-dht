@@ -69,13 +69,13 @@ func saveProvidersToFile(contentID string, addressInfos []peer.AddrInfo) error {
 
 	for _, addressInfo := range addressInfos {
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := &EncapsulatedJSONProviderRecord{
+		NewEncapsulatedJSONProviderRecord := EncapsulatedJSONProviderRecord{
 			ID:      addressInfo.ID.Pretty(),
 			CID:     contentID,
 			Address: addressInfo.Addrs,
 		}
 		//insert the new provider record to the slice in memory containing the provider records read
-		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, *NewEncapsulatedJSONProviderRecord)
+		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
 	}
 	data, err := json.MarshalIndent(records.EncapsulatedJSONProviderRecords, "", " ")
 	if err != nil {
