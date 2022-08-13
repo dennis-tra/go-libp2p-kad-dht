@@ -47,7 +47,7 @@ func NewEncapsulatedJSONCidProvider(id string, cid string, address []ma.Multiadd
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
 //TODO better error handling
-func saveProvidersToFile(contentID string, addressInfos []peer.AddrInfo) error {
+func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error {
 	jsonFile, err := os.Open(filename)
 	defer jsonFile.Close()
 	if err != nil {

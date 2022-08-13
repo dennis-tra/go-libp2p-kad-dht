@@ -59,7 +59,11 @@ type estimatorState struct {
 	// the key to provide
 	key string
 
-	saveProvidersToFile bool
+	//Functionality to keep track of the cid and the providers
+	saveProvidersToFile   bool
+	cidAndProviders       map[string][]*peer.AddrInfo
+	cidandProviderChannel chan *CidAndProvider
+	doneProviderChannel   chan struct{}
 
 	// the key to provide transformed into the Kademlia key space
 	ksKey ks.Key
@@ -72,6 +76,12 @@ type estimatorState struct {
 	// closest peers is below this number we stop the DHT walk and store the remaining provider records.
 	// "remaining" because we have likely already stored some on peers that were below the individualThreshold.
 	setThreshold float64
+}
+
+//Used to receive new provider records from the put Provider Method and insert them into the map inside the estimatorState.
+type CidAndProvider struct {
+	CID         string
+	AddressInfo *peer.AddrInfo
 }
 
 func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimatorState, error) {
@@ -139,6 +149,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	// Store the provider records with all of the closest peers
 	// we haven't already contacted.
+	//TODO needs some modification by to be able to get all of the provider records.
 	es.peerStatesLk.Lock()
 	for _, p := range lookupRes.peers {
 		if _, found := es.peerStates[p]; found {
@@ -231,12 +242,43 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 		es.peerStates[pid] = Failure
 	} else {
 		es.peerStates[pid] = Success
+		//if the peer is successfully inserted into the DHT send it to the channel to be inserted into the map
+		//TODO is this enough?
+		providerRecord := &peer.AddrInfo{
+			ID:    es.dht.Host().ID(),
+			Addrs: es.dht.Host().Addrs(),
+		}
+		cidAndProvider := &CidAndProvider{
+			CID:         es.key,
+			AddressInfo: providerRecord,
+		}
+		es.cidandProviderChannel <- cidAndProvider
 	}
-
 	es.peerStatesLk.Unlock()
 
 	// indicate that this ADD_PROVIDER RPC has completed
 	es.doneChan <- struct{}{}
+}
+
+//Insert the new providers received bty the putProviderRecord method into the corresponding map inside the state.
+func (es *estimatorState) addNewProvider() {
+	for {
+		select {
+		case cidAndProvider := <-es.cidandProviderChannel:
+			if addressinfo, ok := es.cidAndProviders[cidAndProvider.CID]; ok {
+				es.cidAndProviders[cidAndProvider.CID] = append(addressinfo, cidAndProvider.AddressInfo)
+			} else {
+				addressinfo = make([]*peer.AddrInfo, 10)
+				addressinfo = append(addressinfo, cidAndProvider.AddressInfo)
+			}
+		case <-es.doneProviderChannel:
+			//TODO import the record_providers file
+			for cid, addressinfo := range es.cidAndProviders {
+				record_providers.saveProvidersToFile(cid, addressinfo)
+			}
+		}
+		//TODO maybe some context done here
+	}
 }
 
 func (es *estimatorState) waitForRPCs(returnThreshold int) {

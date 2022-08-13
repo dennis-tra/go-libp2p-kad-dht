@@ -8,12 +8,10 @@ make: *** No rule to make target 'all'.  Stop.
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Fri Aug 12 22:10:15 2022
+# Make data base, printed on Sat Aug 13 18:35:30 2022
 
 # Variables
 
-# environment
-FPS_BROWSER_APP_PROFILE_STRING = Internet Explorer
 # environment
 SYSTEMDRIVE = C:
 # environment
@@ -41,9 +39,7 @@ GOPATH = C:\Users\fotis\go
 # automatic
 @D = $(patsubst %/,%,$(patsubst %\,%,$(dir $@)))
 # environment
-CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_6744_JOTPUMLSETNXMHZY
-# environment
-FPS_BROWSER_USER_PROFILE_STRING = Default
+CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_1564_WNQGYWYZYMFEBGJY
 # environment
 VSCODE_HANDLES_UNCAUGHT_ERRORS = true
 # default
@@ -91,7 +87,7 @@ MAKEFILE_LIST :=
 # automatic
 @F = $(notdir $@)
 # environment
-VSCODE_PID = 6744
+VSCODE_PID = 1564
 # automatic
 ?D = $(patsubst %/,%,$(patsubst %\,%,$(dir $?)))
 # automatic
@@ -205,7 +201,7 @@ PROCESSOR_REVISION = 7100
 # environment
 PROCESSOR_IDENTIFIER = AMD64 Family 23 Model 113 Stepping 0, AuthenticAMD
 # variable set hash-table stats:
-# Load=96/1024=9%, Rehash=0, Collisions=8/120=7%
+# Load=94/1024=9%, Rehash=0, Collisions=7/118=6%
 
 # Pattern-specific Variable Values
 
@@ -278,6 +274,6 @@ GNUmakefile:
 # strcache performance: lookups = 58 / hit rate = 5%
 # hash-table stats:
 # Load=55/8192=1%, Rehash=0, Collisions=0/58=0%
-# Finished Make data base on Fri Aug 12 22:10:15 2022
+# Finished Make data base on Sat Aug 13 18:35:30 2022
 
  
