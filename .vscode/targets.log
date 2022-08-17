@@ -8,12 +8,10 @@ make: *** No rule to make target 'all'.  Stop.
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Wed Aug 17 11:30:01 2022
+# Make data base, printed on Wed Aug 17 11:57:39 2022
 
 # Variables
 
-# environment
-FPS_BROWSER_APP_PROFILE_STRING = Internet Explorer
 # environment
 SYSTEMDRIVE = C:
 # environment
@@ -41,9 +39,7 @@ GOPATH = C:\Users\fotis\go
 # automatic
 @D = $(patsubst %/,%,$(patsubst %\,%,$(dir $@)))
 # environment
-CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_6240_PAQZDIKHEFMFRSUD
-# environment
-FPS_BROWSER_USER_PROFILE_STRING = Default
+CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_15136_ZDENAHETIPCVILBV
 # environment
 VSCODE_HANDLES_UNCAUGHT_ERRORS = true
 # default
@@ -91,7 +87,7 @@ MAKEFILE_LIST :=
 # automatic
 @F = $(notdir $@)
 # environment
-VSCODE_PID = 6240
+VSCODE_PID = 15136
 # environment
 CLION = C:\Program Files\JetBrains\CLion 2020.2.4\bin;
 # automatic
@@ -215,7 +211,7 @@ PROCESSOR_REVISION = 1801
 # environment
 PROCESSOR_IDENTIFIER = AMD64 Family 23 Model 24 Stepping 1, AuthenticAMD
 # variable set hash-table stats:
-# Load=101/1024=10%, Rehash=0, Collisions=10/125=8%
+# Load=99/1024=10%, Rehash=0, Collisions=9/123=7%
 
 # Pattern-specific Variable Values
 
@@ -223,9 +219,9 @@ PROCESSOR_IDENTIFIER = AMD64 Family 23 Model 24 Stepping 1, AuthenticAMD
 
 # Directories
 
-# . (key c:/Users/fotis/Documents/GitHub/go-libp2p-kad-dht, mtime 1660709973): 48 files, no impossibilities.
+# . (key c:/Users/fotis/Documents/GitHub/go-libp2p-kad-dht, mtime 1660725027): 49 files, no impossibilities.
 
-# 48 files, no impossibilities in 1 directories.
+# 49 files, no impossibilities in 1 directories.
 
 # Implicit Rules
 
@@ -282,12 +278,12 @@ GNUmakefile:
 
 # No general ('VPATH' variable) search path.
 
-# strcache buffers: 1 (0) / strings = 55 / storage = 614 B / avg = 11 B
-# current buf: size = 8174 B / used = 614 B / count = 55 / avg = 11 B
+# strcache buffers: 1 (0) / strings = 56 / storage = 618 B / avg = 11 B
+# current buf: size = 8174 B / used = 618 B / count = 56 / avg = 11 B
 
-# strcache performance: lookups = 58 / hit rate = 5%
+# strcache performance: lookups = 59 / hit rate = 5%
 # hash-table stats:
-# Load=55/8192=1%, Rehash=0, Collisions=0/58=0%
-# Finished Make data base on Wed Aug 17 11:30:01 2022
+# Load=56/8192=1%, Rehash=0, Collisions=0/59=0%
+# Finished Make data base on Wed Aug 17 11:57:39 2022
 
  

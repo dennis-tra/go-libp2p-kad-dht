@@ -33,7 +33,7 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/crawler"
 	"github.com/libp2p/go-libp2p-kad-dht/internal"
 	internalConfig "github.com/libp2p/go-libp2p-kad-dht/internal/config"
-	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
+	"github.com/libp2p/go-libp2p-kad-dht/net"
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
 	kb "github.com/libp2p/go-libp2p-kbucket"
