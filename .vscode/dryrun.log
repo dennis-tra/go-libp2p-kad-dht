@@ -1,6 +1,6 @@
 make.exe --dry-run --always-make --keep-going --print-directory
-make: Entering directory 'c:/Users/fotis/GitHub/go-libp2p-kad-dht'
-make: Leaving directory 'c:/Users/fotis/GitHub/go-libp2p-kad-dht'
+make: Entering directory 'c:/Users/fotis/Documents/GitHub/go-libp2p-kad-dht'
+make: Leaving directory 'c:/Users/fotis/Documents/GitHub/go-libp2p-kad-dht'
  
 make: *** No targets specified and no makefile found.  Stop.
 
