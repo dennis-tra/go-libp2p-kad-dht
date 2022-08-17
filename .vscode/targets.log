@@ -8,7 +8,7 @@ make: *** No rule to make target 'all'.  Stop.
 # This is free software: you are free to change and redistribute it.
 # There is NO WARRANTY, to the extent permitted by law.
 
-# Make data base, printed on Wed Aug 17 07:47:11 2022
+# Make data base, printed on Wed Aug 17 11:30:01 2022
 
 # Variables
 
@@ -41,7 +41,7 @@ GOPATH = C:\Users\fotis\go
 # automatic
 @D = $(patsubst %/,%,$(patsubst %\,%,$(dir $@)))
 # environment
-CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_1680_WVCIHRHNAMCUXGQY
+CHROME_CRASHPAD_PIPE_NAME = \\.\pipe\crashpad_6240_PAQZDIKHEFMFRSUD
 # environment
 FPS_BROWSER_USER_PROFILE_STRING = Default
 # environment
@@ -91,7 +91,7 @@ MAKEFILE_LIST :=
 # automatic
 @F = $(notdir $@)
 # environment
-VSCODE_PID = 1680
+VSCODE_PID = 6240
 # environment
 CLION = C:\Program Files\JetBrains\CLion 2020.2.4\bin;
 # automatic
@@ -288,6 +288,6 @@ GNUmakefile:
 # strcache performance: lookups = 58 / hit rate = 5%
 # hash-table stats:
 # Load=55/8192=1%, Rehash=0, Collisions=0/58=0%
-# Finished Make data base on Wed Aug 17 07:47:11 2022
+# Finished Make data base on Wed Aug 17 11:30:01 2022
 
  
