@@ -378,7 +378,7 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 	}
 	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
 	var records ProviderRecords
-	//TODO Dennis change of order
+
 	bytes, err := io.ReadAll(jsonFile)
 	if err != nil {
 		return err
