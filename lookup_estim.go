@@ -67,7 +67,9 @@ type estimatorState struct {
 	saveProvidersToFile   bool
 	cidAndProviders       map[string][]*peer.AddrInfo
 	cidandProviderChannel chan *CidAndProvider
-	doneProviderChannel   chan struct{}
+	//send an empty struct after the ADD providers RPC
+	//have been finished
+	doneProviderChannel chan struct{}
 
 	// the key to provide transformed into the Kademlia key space
 	ksKey ks.Key
@@ -112,6 +114,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 	}, nil
 }
 
+//user passes outerCtx
 func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key string) error {
 	if key == "" {
 		return fmt.Errorf("can't lookup empty key")
@@ -126,6 +129,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	es, err := dht.newEstimatorState(putCtx, key)
 	if err != nil {
+		//stop the running provide
 		putCtxCancel()
 		return err
 	}
@@ -140,6 +144,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 			// If the outer context gets cancelled while we're still in this function. We stop all
 			// pending put operations.
 			putCtxCancel()
+		//for the remaining five operations
 		case <-innerCtx.Done():
 			// We have returned from this function. Ignore cancellations of the outer context and continue
 			// with the remaining put operations.
@@ -247,10 +252,9 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 	} else {
 		es.peerStates[pid] = Success
 		//if the peer is successfully inserted into the DHT send it to the channel to be inserted into the map
-		//TODO is this enough?
 		providerRecord := &peer.AddrInfo{
-			ID:    es.dht.Host().ID(),
-			Addrs: es.dht.Host().Addrs(),
+			ID:    pid,
+			Addrs: es.dht.host.Peerstore().Addrs(pid),
 		}
 		cidAndProvider := &CidAndProvider{
 			CID:         es.key,
@@ -276,14 +280,18 @@ func (es *estimatorState) addNewProvider() {
 				addressinfo = append(addressinfo, cidAndProvider.AddressInfo)
 			}
 		case <-es.doneProviderChannel:
-			//TODO import the record_providers file
+			//TODO import from the other package the record_providers file
 			for cid, addressinfo := range es.cidAndProviders {
 				saveProvidersToFile(cid, addressinfo)
 			}
+			return
 		case <-es.putCtx.Done():
-
+			//TODO probably correct
+			for cid, addressinfo := range es.cidAndProviders {
+				saveProvidersToFile(cid, addressinfo)
+			}
+			return
 		}
-		//TODO maybe some context done here
 	}
 }
 
@@ -316,6 +324,7 @@ func (es *estimatorState) waitForRPCs(returnThreshold int) {
 				break
 			}
 		}
+		//TODO close my costum channel and hope for the best
 		close(es.doneChan)
 	}()
 
@@ -369,7 +378,7 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 	}
 	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
 	var records ProviderRecords
-
+	//TODO Dennis change of order
 	bytes, err := io.ReadAll(jsonFile)
 	if err != nil {
 		return err
