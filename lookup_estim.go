@@ -82,9 +82,10 @@ type estimatorState struct {
 	// closest peers is below this number we stop the DHT walk and store the remaining provider records.
 	// "remaining" because we have likely already stored some on peers that were below the individualThreshold.
 	setThreshold float64
-}
 
-//Used to receive new provider records from the put Provider Method and insert them into the map inside the estimatorState.
+	// number of completed (regardless of success) ADD_PROVIDER RPCs before we return control back to the user.
+	returnThreshold int
+}
 type CidAndProvider struct {
 	CID         string
 	AddressInfo *peer.AddrInfo
@@ -111,10 +112,10 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 		peerStates:          map[peer.ID]addProviderRPCState{},
 		individualThreshold: individualThreshold,
 		setThreshold:        setThreshold,
+		returnThreshold:     returnThreshold,
 	}, nil
 }
 
-//user passes outerCtx
 func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key string) error {
 	if key == "" {
 		return fmt.Errorf("can't lookup empty key")
@@ -170,8 +171,8 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	}
 	es.peerStatesLk.Unlock()
 
-	// wait until at least bucketSize * 0.75 ADD_PROVIDER RPCs have completed
-	es.waitForRPCs(int(float64(es.dht.bucketSize) * 0.75))
+	// wait until a threshold number of RPCs have completed
+	es.waitForRPCs(es.returnThreshold)
 
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
@@ -237,11 +238,7 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 	avg := sum / float64(len(distances))
 
 	// if the average is below the set threshold stop the procedure
-	if avg < es.setThreshold {
-		return true
-	}
-
-	return false
+	return avg < es.setThreshold
 }
 
 func (es *estimatorState) putProviderRecord(pid peer.ID) {
