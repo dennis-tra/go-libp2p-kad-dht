@@ -452,6 +452,11 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		//TODO: I can break the interface! return []peer.ID
 		lookupRes, err := dht.runLookupWithFollowup(ctx, key,
 			func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
+				if _, ok := hydras[p.String()]; log && ok {
+					fmt.Printf("%s: Skipping Hydra Booster in Provide: %v \n", time.Now().Format(time.RFC3339Nano), p.String())
+					return nil, nil
+				}
+
 				// For DHT query command
 				routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 					Type: routing.SendingQuery,
@@ -475,8 +480,14 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 
 				if log {
 					msg := fmt.Sprintf("%s: Got %v closest peers to cid %v from %v(%v): ", time.Now().Format(time.RFC3339Nano), len(peers), peer.ID(key).String(), p.String(), agentVersion)
-					for _, peer := range peers {
-						msg = fmt.Sprintf("%v %v", msg, peer.ID.String())
+					for i := 0; i < len(peers); {
+						if _, ok := hydras[peers[i].ID.String()]; ok {
+							msg = fmt.Sprintf("%v hydra(%v)", msg, peers[i].ID.String())
+							peers = append(peers[:i], peers[i+1:]...)
+						} else {
+							msg = fmt.Sprintf("%v %v", msg, peers[i].ID.String())
+							i++
+						}
 					}
 					fmt.Println(msg)
 				}
@@ -744,6 +755,11 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(key),
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
+			if _, ok := hydras[p.String()]; log && ok {
+				fmt.Printf("%s: Skipping Hydra Booster in Find Provider: %v \n", time.Now().Format(time.RFC3339Nano), p.String())
+				return nil, nil
+			}
+
 			// For DHT query command
 			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 				Type: routing.SendingQuery,
@@ -773,6 +789,10 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 			// Add unique providers from request, up to 'count'
 			for _, prov := range provs {
+				if _, ok := hydras[prov.ID.String()]; log && ok {
+					fmt.Printf("%s: Skipping Hydra Booster from returned providing peers: %v \n", time.Now().Format(time.RFC3339Nano), prov.ID.String())
+					continue
+				}
 				dht.maybeAddAddrs(prov.ID, prov.Addrs, peerstore.TempAddrTTL)
 				if log {
 					fmt.Printf("%s: Found provider %v for cid %v from %v(%v)\n", time.Now().Format(time.RFC3339Nano), prov.ID.String(), key.B58String(), p.String(), agentVersion)
@@ -810,8 +830,14 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 			logger.Debugf("got closer peers: %d %s", len(closest), closest)
 			if log {
 				msg := fmt.Sprintf("%s: Got %v closest peers to cid %v from %v(%v): ", time.Now().Format(time.RFC3339Nano), len(closest), key.B58String(), p.String(), agentVersion)
-				for _, peer := range closest {
-					msg += fmt.Sprintf("%v ", peer.ID.String())
+				for i := 0; i < len(closest); {
+					if _, ok := hydras[closest[i].ID.String()]; ok {
+						msg = fmt.Sprintf("%v hydra(%v)", msg, closest[i].ID.String())
+						closest = append(closest[:i], closest[i+1:]...)
+					} else {
+						msg = fmt.Sprintf("%v %v", msg, closest[i].ID.String())
+						i++
+					}
 				}
 				fmt.Println(msg)
 			}
