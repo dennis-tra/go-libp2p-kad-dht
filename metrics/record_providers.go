@@ -6,7 +6,7 @@ import (
 	"os"
 
 	"github.com/libp2p/go-libp2p-core/peer"
-	ma "github.com/multiformats/go-multiaddr"
+	"github.com/prometheus/common/log"
 )
 
 const filename = "providers.json"
@@ -22,9 +22,9 @@ type ProviderRecords struct {
 //This struct will be used to create,read and store the encapsulated data necessary for reading the
 //provider records.
 type EncapsulatedJSONProviderRecord struct {
-	ID      string         `json:"PeerID"`
-	CID     string         `json:"ContentID"`
-	Address []ma.Multiaddr `json:"PeerMultiaddress"`
+	ID        string   `json:"PeerID"`
+	CID       string   `json:"ContentID"`
+	Addresses []string `json:"PeerMultiaddress"`
 }
 
 //Creates a new:
@@ -33,11 +33,11 @@ type EncapsulatedJSONProviderRecord struct {
 //		CID     string
 //		Address ma.Multiaddr
 //	}
-func NewEncapsulatedJSONCidProvider(id string, cid string, address []ma.Multiaddr) EncapsulatedJSONProviderRecord {
+func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string) EncapsulatedJSONProviderRecord {
 	return EncapsulatedJSONProviderRecord{
-		ID:      id,
-		CID:     cid,
-		Address: address,
+		ID:        id,
+		CID:       cid,
+		Addresses: addresses,
 	}
 }
 
@@ -46,10 +46,14 @@ func NewEncapsulatedJSONCidProvider(id string, cid string, address []ma.Multiadd
 //
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
-//TODO better error handling
 func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error {
 	jsonFile, err := os.Open(filename)
-	defer jsonFile.Close()
+	defer func(jsonFile *os.File) {
+		err := jsonFile.Close()
+		if err != nil {
+			log.Errorf("error %s while closing down providers file", err)
+		}
+	}(jsonFile)
 	if err != nil {
 		return err
 	}
@@ -68,11 +72,16 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 	}
 
 	for _, addressInfo := range addressInfos {
+
+		addressesString := make([]string, 0)
+		for _, address := range addressInfo.Addrs {
+			addressesString = append(addressesString, address.String())
+		}
 		//create a new encapsulated struct
 		NewEncapsulatedJSONProviderRecord := EncapsulatedJSONProviderRecord{
-			ID:      addressInfo.ID.Pretty(),
-			CID:     contentID,
-			Address: addressInfo.Addrs,
+			ID:        addressInfo.ID.Pretty(),
+			CID:       contentID,
+			Addresses: addressesString,
 		}
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
