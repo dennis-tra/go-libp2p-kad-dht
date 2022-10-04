@@ -2420,8 +2420,8 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	}
 	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String()))); err == nil {
 	// if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide"))); err == nil {
-		// os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String())))
-		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide")))
+		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String())))
+		// os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide")))
 		log = true
 		activeTestingLock.Lock()
 		if activeTesting == nil {
