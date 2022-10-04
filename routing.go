@@ -2418,8 +2418,8 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
 	}
-	// if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String()))); err == nil {
-	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide"))); err == nil {
+	if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String()))); err == nil {
+	// if _, err := os.Stat(path.Join(ipfsTestFolder, fmt.Sprintf("provide"))); err == nil {
 		// os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide-%v", key.String())))
 		os.Remove(path.Join(ipfsTestFolder, fmt.Sprintf("provide")))
 		log = true
@@ -2725,7 +2725,7 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 		ps = peer.NewLimitedSet(count)
 	}
 
-	log := true
+	log := false
 	ipfsTestFolder := os.Getenv("PERFORMANCE_TEST_DIR")
 	if ipfsTestFolder == "" {
 		ipfsTestFolder = "/ipfs-tests"
