@@ -413,6 +413,8 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //we need to read the contents and add the new provider record to the already existing array.
 func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
+	log.Debug("cid is: %s")
+	log.Debug("address infos: %v", addressInfos)
 	jsonFile, err := os.Open(filename)
 	defer func(jsonFile *os.File) {
 		err := jsonFile.Close()
@@ -440,6 +442,10 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 	}
 
 	for _, addressInfo := range addressInfos {
+
+		if addressInfo == nil {
+			continue
+		}
 
 		addressesString := make([]string, 0)
 		for _, address := range addressInfo.Addrs {
