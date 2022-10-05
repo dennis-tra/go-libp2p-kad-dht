@@ -162,9 +162,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	//start the go routine to store the providers into the map
 	var addnewproviderWG sync.WaitGroup
-	addnewproviderWG.Add(1)
-	defer addnewproviderWG.Done()
-	go es.addNewProvider()
+	go es.addNewProvider(&addnewproviderWG)
 
 	lookupRes, err := dht.runLookupWithFollowup(outerCtx, key, dht.pmGetClosestPeers(key), es.stopFn)
 	if err != nil {
@@ -288,7 +286,8 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 }
 
 //Insert the new providers received bty the putProviderRecord method into the corresponding map inside the state.
-func (es *estimatorState) addNewProvider() {
+func (es *estimatorState) addNewProvider(addproviderWG *sync.WaitGroup) {
+	addproviderWG.Add(1)
 	for {
 		select {
 		case cidAndProvider := <-es.cidandProviderChannel:
@@ -307,26 +306,30 @@ func (es *estimatorState) addNewProvider() {
 			//the struct is closed start adding the providers to the file
 			if !ok {
 				log.Debug("struct has been closed")
-				for cid, addrinfos := range es.cidAndProviders {
+				for pcid, addrinfos := range es.cidAndProviders {
 
-					err := saveProvidersToFile(cid, addrinfos)
+					err := saveProvidersToFile(pcid, addrinfos)
 					if err != nil {
 						log.Errorf("error %s while trying to save to providers file", err)
+						addproviderWG.Done()
 						return
 					}
 				}
+				addproviderWG.Done()
 				return
 			}
 		case <-es.putCtx.Done():
 			log.Debug("put context ended")
-			for cid, addrinfos := range es.cidAndProviders {
+			for pcid, addrinfos := range es.cidAndProviders {
 
-				err := saveProvidersToFile(cid, addrinfos)
+				err := saveProvidersToFile(pcid, addrinfos)
 				if err != nil {
 					log.Errorf("error %s while trying to save to providers file", err)
+					addproviderWG.Done()
 					return
 				}
 			}
+			addproviderWG.Done()
 			return
 		}
 	}
@@ -429,7 +432,7 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 	}
 
 	if len(bytes) != 0 {
-		//read the existing data
+		//read the existing data. Will throw error if they are not of type EncapsulatedJSONproviderRecord
 		err = json.Unmarshal(bytes, &records.EncapsulatedJSONProviderRecords)
 		if err != nil {
 			return errors.Wrap(err, "while unmarshalling json")
