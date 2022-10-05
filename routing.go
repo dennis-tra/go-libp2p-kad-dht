@@ -455,7 +455,7 @@ func (dht *IpfsDHT) OptimisticProvide(ctx context.Context, key cid.Cid) (err err
 		return err
 	}
 
-	return dht.GetAndProvideToClosestPeers(ctx, string(keyMH))
+	return dht.GetAndProvideToClosestPeers(ctx, string(keyMH), key)
 }
 
 // FindProviders searches until the context expires.
