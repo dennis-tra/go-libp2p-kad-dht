@@ -103,16 +103,18 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * OptProvReturnRatio))
 
 	return &estimatorState{
-		putCtx:              ctx,
-		dht:                 dht,
-		key:                 key,
-		doneChan:            make(chan struct{}, returnThreshold), // buffered channel to not miss events
-		ksKey:               ks.XORKeySpace.Key([]byte(key)),
-		networkSize:         networkSize,
-		peerStates:          map[peer.ID]addProviderRPCState{},
-		individualThreshold: individualThreshold,
-		setThreshold:        setThreshold,
-		returnThreshold:     returnThreshold,
+		putCtx:                ctx,
+		dht:                   dht,
+		key:                   key,
+		doneChan:              make(chan struct{}, returnThreshold), // buffered channel to not miss events
+		cidandProviderChannel: make(chan *CidAndProvider, returnThreshold),
+		doneProviderChannel:   make(chan struct{}, returnThreshold),
+		ksKey:                 ks.XORKeySpace.Key([]byte(key)),
+		networkSize:           networkSize,
+		peerStates:            map[peer.ID]addProviderRPCState{},
+		individualThreshold:   individualThreshold,
+		setThreshold:          setThreshold,
+		returnThreshold:       returnThreshold,
 	}, nil
 }
 
@@ -127,6 +129,8 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	// provided the outer context the put operations may be cancelled depending on what happens
 	// with the context on the user side.
 	putCtx, putCtxCancel := context.WithTimeout(context.Background(), time.Minute)
+
+	log.Debug("trying to create new estimator state")
 
 	es, err := dht.newEstimatorState(putCtx, key)
 	if err != nil {
@@ -157,6 +161,8 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 		return err
 	}
 
+	log.Debug("done run lookup with followup")
+
 	// Store the provider records with all of the closest peers
 	// we haven't already contacted.
 	//TODO needs some modification by to be able to get all of the provider records.
@@ -173,6 +179,8 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	// wait until a threshold number of RPCs have completed
 	es.waitForRPCs(es.returnThreshold)
+
+	log.Debug("done waiting for rpcs")
 
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
@@ -245,8 +253,10 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 	err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
 	es.peerStatesLk.Lock()
 	if err != nil {
+		log.Debug("failure while adding provider")
 		es.peerStates[pid] = Failure
 	} else {
+		log.Debug("success while adding provider")
 		es.peerStates[pid] = Success
 		//if the peer is successfully inserted into the DHT send it to the channel to be inserted into the map
 		providerRecord := &peer.AddrInfo{
@@ -258,11 +268,13 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 			AddressInfo: providerRecord,
 		}
 		es.cidandProviderChannel <- cidAndProvider
+		log.Debug("sent provider over channel")
 	}
 	es.peerStatesLk.Unlock()
 
 	// indicate that this ADD_PROVIDER RPC has completed
 	es.doneChan <- struct{}{}
+	log.Debug("sent empty struct over done channel")
 }
 
 //Insert the new providers received bty the putProviderRecord method into the corresponding map inside the state.
