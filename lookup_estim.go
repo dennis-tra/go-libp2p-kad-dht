@@ -365,8 +365,8 @@ func (es *estimatorState) waitForRPCs(returnThreshold int) {
 			}
 		}
 		//TODO close my costum channel and hope for the best
-		close(es.doneChan)
 		es.doneChan <- struct{}{}
+		close(es.doneChan)
 		log.Debug("closed done channel")
 	}()
 
