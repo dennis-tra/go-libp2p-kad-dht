@@ -413,8 +413,8 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //we need to read the contents and add the new provider record to the already existing array.
 func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
-	log.Debug("cid is: %s")
-	log.Debug("address infos: %v", addressInfos)
+	log.Debugf("cid is: %s", contentID)
+	log.Debugf("address infos: %v", addressInfos)
 	jsonFile, err := os.Open(filename)
 	defer func(jsonFile *os.File) {
 		err := jsonFile.Close()
@@ -435,7 +435,7 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 
 	if len(bytes) != 0 {
 		//read the existing data. Will throw error if they are not of type EncapsulatedJSONproviderRecord
-		err = json.Unmarshal(bytes, &records.EncapsulatedJSONProviderRecords)
+		err = json.Unmarshal(bytes, &records)
 		if err != nil {
 			return errors.Wrap(err, "while unmarshalling json")
 		}
@@ -461,7 +461,7 @@ func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error 
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
 	}
-	data, err := json.MarshalIndent(records.EncapsulatedJSONProviderRecords, "", " ")
+	data, err := json.MarshalIndent(&records, "", " ")
 	if err != nil {
 		return errors.Wrap(err, "while marshalling json data")
 	}
