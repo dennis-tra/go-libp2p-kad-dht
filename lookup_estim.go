@@ -182,25 +182,10 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	// wait until a threshold number of RPCs have completed
 	es.waitForRPCs(es.returnThreshold)
-	for ncid, prs := range es.cidAndProviders {
-		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs)
-		if err != nil {
-			log.Errorf("error: %s", err)
-		}
-		err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs)
-		if err != nil {
-			log.Errorf("error: %s", err)
-		}
-		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
-		if err != nil {
-			log.Errorf("error: %s", err)
-		}
-		err = saveProvidersToMultipleEncodedJSONFiles("providers.json", ncid, prs)
-		if err != nil {
-			log.Errorf("error: %s", err)
-		}
-	}
 	es.addProviderWG.Wait()
+	var savetofilesWG sync.WaitGroup
+	go es.saveToFiles(&savetofilesWG)
+	savetofilesWG.Wait()
 	log.Debug("done waiting for rpcs")
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
@@ -498,4 +483,27 @@ func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, a
 		return errors.Wrap(err, "while trying to save to multiple json files")
 	}
 	return nil
+}
+
+func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup) {
+	savetofilesWG.Add(1)
+	defer savetofilesWG.Done()
+	for ncid, prs := range es.cidAndProviders {
+		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToMultipleEncodedJSONFiles("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+	}
 }
