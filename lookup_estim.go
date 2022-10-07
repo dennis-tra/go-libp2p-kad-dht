@@ -2,11 +2,8 @@ package dht
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math"
-	"os"
 	"sync"
 	"time"
 
@@ -15,7 +12,6 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/netsize"
 	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 	kb "github.com/libp2p/go-libp2p-kbucket"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	ks "github.com/whyrusleeping/go-keyspace"
 	"gonum.org/v1/gonum/mathext"
@@ -306,29 +302,11 @@ func (es *estimatorState) addNewProvider(addproviderWG *sync.WaitGroup) {
 			//the struct is closed start adding the providers to the file
 			if !ok {
 				log.Debug("struct has been closed")
-				for pcid, addrinfos := range es.cidAndProviders {
-
-					err := saveProvidersToFile(pcid, addrinfos)
-					if err != nil {
-						log.Errorf("error %s while trying to save to providers file", err)
-						addproviderWG.Done()
-						return
-					}
-				}
 				addproviderWG.Done()
 				return
 			}
 		case <-es.putCtx.Done():
 			log.Debug("put context ended")
-			for pcid, addrinfos := range es.cidAndProviders {
-
-				err := saveProvidersToFile(pcid, addrinfos)
-				if err != nil {
-					log.Errorf("error %s while trying to save to providers file", err)
-					addproviderWG.Done()
-					return
-				}
-			}
 			addproviderWG.Done()
 			return
 		}
@@ -372,102 +350,4 @@ func (es *estimatorState) waitForRPCs(returnThreshold int) {
 
 	// wait until returnThreshold ADD_PROVIDER RPCs have finished
 	wg.Wait()
-}
-
-//A container for the encapsulated struct.
-//
-//File containts a json array of provider records.
-//[{ProviderRecord1},{ProviderRecord2},{ProviderRecord3}]
-type ProviderRecords struct {
-	EncapsulatedJSONProviderRecords []EncapsulatedJSONProviderRecord `json:"ProviderRecords"`
-}
-
-//This struct will be used to create,read and store the encapsulated data necessary for reading the
-//provider records.
-type EncapsulatedJSONProviderRecord struct {
-	ID        string   `json:"PeerID"`
-	CID       string   `json:"ContentID"`
-	Addresses []string `json:"PeerMultiaddress"`
-}
-
-//Creates a new:
-//	EncapsulatedCidProvider struct {
-//		ID      string
-//		CID     string
-//		Address ma.Multiaddr
-//	}
-func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string) EncapsulatedJSONProviderRecord {
-	return EncapsulatedJSONProviderRecord{
-		ID:        id,
-		CID:       cid,
-		Addresses: addresses,
-	}
-}
-
-const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-libp2p-kad-dht\\providers.json"
-
-//Saves the providers along with the CIDs in a json format. In an error occurs it returns the error or else
-//it returns nil.
-//
-//Because we want to add a new provider record in the file for each new provider record
-//we need to read the contents and add the new provider record to the already existing array.
-func saveProvidersToFile(contentID string, addressInfos []*peer.AddrInfo) error {
-	log.Debug("starting to save providers to file")
-	log.Debugf("cid is: %s", contentID)
-	log.Debugf("address infos: %v", addressInfos)
-	jsonFile, err := os.Open(filename)
-	defer func(jsonFile *os.File) {
-		err := jsonFile.Close()
-		if err != nil {
-			log.Errorf("error %s while closing down providers file", err)
-		}
-	}(jsonFile)
-	if err != nil {
-		return errors.Wrap(err, "whiel trying to open json file")
-	}
-	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
-	var records ProviderRecords
-
-	bytes, err := io.ReadAll(jsonFile)
-	if err != nil {
-		return errors.Wrap(err, "while trying to read json file")
-	}
-
-	if len(bytes) != 0 {
-		//read the existing data. Will throw error if they are not of type EncapsulatedJSONproviderRecord
-		err = json.Unmarshal(bytes, &records)
-		if err != nil {
-			return errors.Wrap(err, "while unmarshalling json")
-		}
-	}
-
-	for _, addressInfo := range addressInfos {
-
-		if addressInfo == nil {
-			continue
-		}
-
-		addressesString := make([]string, 0)
-		for _, address := range addressInfo.Addrs {
-			addressesString = append(addressesString, address.String())
-		}
-		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := EncapsulatedJSONProviderRecord{
-			ID:        addressInfo.ID.String(),
-			CID:       contentID,
-			Addresses: addressesString,
-		}
-		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
-		//insert the new provider record to the slice in memory containing the provider records read
-		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
-	}
-	data, err := json.MarshalIndent(&records, "", " ")
-	if err != nil {
-		return errors.Wrap(err, "while marshalling json data")
-	}
-	err = os.WriteFile(filename, data, 0644)
-	if err != nil {
-		return errors.Wrap(err, "while trying to write json data to file")
-	}
-	return nil
 }
