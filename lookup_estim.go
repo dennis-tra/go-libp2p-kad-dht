@@ -66,10 +66,10 @@ type estimatorState struct {
 	key string
 
 	//Functionality to keep track of the cid and the providers
-	nonHashedKey          cid.Cid
-	saveProvidersToFile   bool
-	cidAndProviders       map[string][]*peer.AddrInfo
-	cidandProviderChannel chan *CidAndProvider
+	nonHashedKey    cid.Cid
+	cidAndProviders map[string][]*peer.AddrInfo
+	mu              sync.Mutex
+	addProviderWG   sync.WaitGroup
 	//send an empty struct after the ADD providers RPC
 	//have been finished
 	doneProviderChannel chan struct{}
@@ -106,19 +106,18 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashed
 	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * OptProvReturnRatio))
 
 	return &estimatorState{
-		putCtx:                ctx,
-		dht:                   dht,
-		key:                   key,
-		nonHashedKey:          nonHashedKey,
-		doneChan:              make(chan struct{}, returnThreshold), // buffered channel to not miss events
-		cidandProviderChannel: make(chan *CidAndProvider, returnThreshold),
-		cidAndProviders:       make(map[string][]*peer.AddrInfo),
-		ksKey:                 ks.XORKeySpace.Key([]byte(key)),
-		networkSize:           networkSize,
-		peerStates:            map[peer.ID]addProviderRPCState{},
-		individualThreshold:   individualThreshold,
-		setThreshold:          setThreshold,
-		returnThreshold:       returnThreshold,
+		putCtx:              ctx,
+		dht:                 dht,
+		key:                 key,
+		nonHashedKey:        nonHashedKey,
+		doneChan:            make(chan struct{}, returnThreshold), // buffered channel to not miss events
+		cidAndProviders:     make(map[string][]*peer.AddrInfo),
+		ksKey:               ks.XORKeySpace.Key([]byte(key)),
+		networkSize:         networkSize,
+		peerStates:          map[peer.ID]addProviderRPCState{},
+		individualThreshold: individualThreshold,
+		setThreshold:        setThreshold,
+		returnThreshold:     returnThreshold,
 	}, nil
 }
 
@@ -160,10 +159,6 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 		}
 	}()
 
-	//start the go routine to store the providers into the map
-	var addnewproviderWG sync.WaitGroup
-	go es.addNewProvider(&addnewproviderWG)
-
 	lookupRes, err := dht.runLookupWithFollowup(outerCtx, key, dht.pmGetClosestPeers(key), es.stopFn)
 	if err != nil {
 		return err
@@ -187,9 +182,26 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	// wait until a threshold number of RPCs have completed
 	es.waitForRPCs(es.returnThreshold)
-
+	for ncid, prs := range es.cidAndProviders {
+		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToMultipleEncodedJSONFiles("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+	}
+	es.addProviderWG.Wait()
 	log.Debug("done waiting for rpcs")
-	addnewproviderWG.Wait()
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
 		// tracking lookup results for network size estimator as "completed" is true
@@ -275,8 +287,7 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 			CID:         es.nonHashedKey.String(),
 			AddressInfo: providerRecord,
 		}
-		es.cidandProviderChannel <- cidAndProvider
-		log.Debug("sent provider over channel")
+		go es.addNewProviderToMap(cidAndProvider, &es.addProviderWG)
 	}
 	es.peerStatesLk.Unlock()
 
@@ -286,35 +297,21 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 }
 
 //Insert the new providers received bty the putProviderRecord method into the corresponding map inside the state.
-func (es *estimatorState) addNewProvider(addproviderWG *sync.WaitGroup) {
+func (es *estimatorState) addNewProviderToMap(pr *CidAndProvider, addproviderWG *sync.WaitGroup) {
 	addproviderWG.Add(1)
-	for {
-		select {
-		case cidAndProvider := <-es.cidandProviderChannel:
-			log.Debugf("received cid: %s and provider %s from cid and provider channel", cidAndProvider.CID, cidAndProvider.AddressInfo.ID.String())
-			if addressinfo, ok := es.cidAndProviders[cidAndProvider.CID]; ok {
-				log.Debug("added address info for provider")
-				es.cidAndProviders[cidAndProvider.CID] = append(addressinfo, cidAndProvider.AddressInfo)
-			} else {
-				log.Debug("initialized map for cids")
-				addressinfo = make([]*peer.AddrInfo, 10)
-				addressinfo = append(addressinfo, cidAndProvider.AddressInfo)
-				es.cidAndProviders[cidAndProvider.CID] = addressinfo
-			}
-		case _, ok := <-es.doneChan:
-			log.Debugf("received empty struct from done channel")
-			//the struct is closed start adding the providers to the file
-			if !ok {
-				log.Debug("struct has been closed")
-				addproviderWG.Done()
-				return
-			}
-		case <-es.putCtx.Done():
-			log.Debug("put context ended")
-			addproviderWG.Done()
-			return
-		}
+	defer addproviderWG.Done()
+	es.mu.Lock()
+	log.Debugf("trying to add cid: %s and provider %s to map", pr.CID, pr.AddressInfo.ID.String())
+	if addressinfo, ok := es.cidAndProviders[pr.CID]; ok {
+		log.Debug("added address info for provider")
+		es.cidAndProviders[pr.CID] = append(addressinfo, pr.AddressInfo)
+	} else {
+		log.Debug("initialized map for cids")
+		addressinfo = make([]*peer.AddrInfo, 10)
+		addressinfo = append(addressinfo, pr.AddressInfo)
+		es.cidAndProviders[pr.CID] = addressinfo
 	}
+	es.mu.Unlock()
 }
 
 func (es *estimatorState) waitForRPCs(returnThreshold int) {
@@ -346,8 +343,6 @@ func (es *estimatorState) waitForRPCs(returnThreshold int) {
 				break
 			}
 		}
-		//TODO close my costum channel and hope for the best
-		es.doneChan <- struct{}{}
 		close(es.doneChan)
 		log.Debug("closed done channel")
 	}()
@@ -393,20 +388,19 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
-func saveProvidersToFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
-	log.Debugf("cid is: %s", contentID)
-	log.Debugf("address infos: %v", addressInfos)
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE, 0644)
+	if err != nil {
+		return errors.Wrap(err, "while trying to open json file")
+	}
 	defer func(jsonFile *os.File) {
 		err := jsonFile.Close()
 		if err != nil {
 			log.Errorf("error %s while closing down providers file", err)
 		}
 	}(jsonFile)
-	if err != nil {
-		return errors.Wrap(err, "whiel trying to open json file")
-	}
+
 	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
 	var records ProviderRecords
 
@@ -447,6 +441,61 @@ func saveProvidersToFile(filename string, contentID string, addressInfos []*peer
 	err = os.WriteFile(filename, data, 0644)
 	if err != nil {
 		return errors.Wrap(err, "while trying to write json data to file")
+	}
+	return nil
+}
+
+func saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	log.Debug("starting to save providers to file")
+	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return errors.Wrap(err, "while trying to open json file")
+	}
+	defer func(jsonFile *os.File) {
+		err := jsonFile.Close()
+		if err != nil {
+			log.Errorf("error %s while closing down providers file", err)
+		}
+	}(jsonFile)
+
+	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
+	var records ProviderRecords
+
+	encoder := json.NewEncoder(jsonFile)
+
+	for _, addressInfo := range addressInfos {
+		if addressInfo == nil {
+			continue
+		}
+		stringaddrss := make([]string, len(addressInfo.Addrs))
+		for _, addrss := range addressInfo.Addrs {
+			stringaddrss = append(stringaddrss, addrss.String())
+		}
+
+		//create a new encapsulated struct
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss)
+		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
+		//insert the new provider record to the slice in memory containing the provider records read
+		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
+	}
+	encoder.Encode(&records)
+	return nil
+}
+
+func saveProvidersToMultipleEncodedJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	newf := fmt.Sprintf(contentID + filename)
+	err := saveProvidersToEncodedJSONFile(newf, contentID, addressInfos)
+	if err != nil {
+		return errors.Wrap(err, "while trying to save to multiple json files")
+	}
+	return nil
+}
+
+func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	newf := fmt.Sprintf(contentID + filename)
+	err := saveProvidersSimpleJSONFile(newf, contentID, addressInfos)
+	if err != nil {
+		return errors.Wrap(err, "while trying to save to multiple json files")
 	}
 	return nil
 }
