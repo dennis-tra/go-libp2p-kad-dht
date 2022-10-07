@@ -375,7 +375,7 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //we need to read the contents and add the new provider record to the already existing array.
 func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
-	jsonFile, err := os.OpenFile(filename, os.O_CREATE, 0644)
+	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return errors.Wrap(err, "while trying to open json file")
 	}
@@ -468,7 +468,7 @@ func saveProvidersToEncodedJSONFile(filename string, contentID string, addressIn
 }
 
 func saveProvidersToMultipleEncodedJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
-	newf := fmt.Sprintf(contentID + filename)
+	newf := fmt.Sprintf("encoded" + contentID + filename)
 	err := saveProvidersToEncodedJSONFile(newf, contentID, addressInfos)
 	if err != nil {
 		return errors.Wrap(err, "while trying to save to multiple json files")
