@@ -292,7 +292,6 @@ func (es *estimatorState) addNewProviderToMap(pr *CidAndProvider, addproviderWG 
 		es.cidAndProviders[pr.CID] = append(addressinfo, pr.AddressInfo)
 	} else {
 		log.Debug("initialized map for cids")
-		addressinfo = make([]*peer.AddrInfo, 10)
 		addressinfo = append(addressinfo, pr.AddressInfo)
 		es.cidAndProviders[pr.CID] = addressinfo
 	}
