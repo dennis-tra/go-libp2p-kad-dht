@@ -2,15 +2,22 @@ package dht
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"math"
+	"os"
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+
+	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
 	"github.com/libp2p/go-libp2p-kad-dht/netsize"
 	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 	kb "github.com/libp2p/go-libp2p-kbucket"
+	log "github.com/sirupsen/logrus"
 	ks "github.com/whyrusleeping/go-keyspace"
 	"gonum.org/v1/gonum/mathext"
 )
@@ -59,6 +66,15 @@ type estimatorState struct {
 	// the key to provide
 	key string
 
+	//Functionality to keep track of the cid and the providers
+	nonHashedKey    cid.Cid
+	cidAndProviders map[string][]*peer.AddrInfo
+	mu              sync.Mutex
+	addProviderWG   sync.WaitGroup
+	//send an empty struct after the ADD providers RPC
+	//have been finished
+	doneProviderChannel chan struct{}
+
 	// the key to provide transformed into the Kademlia key space
 	ksKey ks.Key
 
@@ -74,8 +90,12 @@ type estimatorState struct {
 	// number of completed (regardless of success) ADD_PROVIDER RPCs before we return control back to the user.
 	returnThreshold int
 }
+type CidAndProvider struct {
+	CID         string
+	AddressInfo *peer.AddrInfo
+}
 
-func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimatorState, error) {
+func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashedKey cid.Cid) (*estimatorState, error) {
 	// get network size and err out if there is no reasonable estimate
 	networkSize, err := dht.nsEstimator.NetworkSize()
 	if err != nil {
@@ -90,7 +110,9 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 		putCtx:              ctx,
 		dht:                 dht,
 		key:                 key,
+		nonHashedKey:        nonHashedKey,
 		doneChan:            make(chan struct{}, returnThreshold), // buffered channel to not miss events
+		cidAndProviders:     make(map[string][]*peer.AddrInfo),
 		ksKey:               ks.XORKeySpace.Key([]byte(key)),
 		networkSize:         networkSize,
 		peerStates:          map[peer.ID]addProviderRPCState{},
@@ -100,7 +122,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 	}, nil
 }
 
-func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key string) error {
+func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key string, nonHashedKey cid.Cid) error {
 	if key == "" {
 		return fmt.Errorf("can't lookup empty key")
 	}
@@ -112,8 +134,11 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	// with the context on the user side.
 	putCtx, putCtxCancel := context.WithTimeout(context.Background(), time.Minute)
 
-	es, err := dht.newEstimatorState(putCtx, key)
+	log.Debug("trying to create new estimator state")
+
+	es, err := dht.newEstimatorState(putCtx, key, nonHashedKey)
 	if err != nil {
+		//stop the running provide
 		putCtxCancel()
 		return err
 	}
@@ -128,6 +153,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 			// If the outer context gets cancelled while we're still in this function. We stop all
 			// pending put operations.
 			putCtxCancel()
+		//for the remaining five operations
 		case <-innerCtx.Done():
 			// We have returned from this function. Ignore cancellations of the outer context and continue
 			// with the remaining put operations.
@@ -139,8 +165,11 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 		return err
 	}
 
+	log.Debug("done run lookup with followup")
+
 	// Store the provider records with all of the closest peers
 	// we haven't already contacted.
+	//TODO needs some modification by to be able to get all of the provider records.
 	es.peerStatesLk.Lock()
 	for _, p := range lookupRes.peers {
 		if _, found := es.peerStates[p]; found {
@@ -154,7 +183,11 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	// wait until a threshold number of RPCs have completed
 	es.waitForRPCs(es.returnThreshold)
-
+	es.addProviderWG.Wait()
+	var savetofilesWG sync.WaitGroup
+	go es.saveToFiles(&savetofilesWG)
+	savetofilesWG.Wait()
+	log.Debug("done waiting for rpcs")
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
 		// tracking lookup results for network size estimator as "completed" is true
@@ -226,14 +259,44 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 	err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
 	es.peerStatesLk.Lock()
 	if err != nil {
+		log.Debug("failure while adding provider")
 		es.peerStates[pid] = Failure
 	} else {
+		log.Debug("success while adding provider")
 		es.peerStates[pid] = Success
+		//if the peer is successfully inserted into the DHT send it to the channel to be inserted into the map
+		providerRecord := &peer.AddrInfo{
+			ID:    pid,
+			Addrs: es.dht.host.Peerstore().Addrs(pid),
+		}
+		cidAndProvider := &CidAndProvider{
+			CID:         es.nonHashedKey.String(),
+			AddressInfo: providerRecord,
+		}
+		go es.addNewProviderToMap(cidAndProvider, &es.addProviderWG)
 	}
 	es.peerStatesLk.Unlock()
 
 	// indicate that this ADD_PROVIDER RPC has completed
 	es.doneChan <- struct{}{}
+	log.Debug("sent empty struct over done channel")
+}
+
+//Insert the new providers received bty the putProviderRecord method into the corresponding map inside the state.
+func (es *estimatorState) addNewProviderToMap(pr *CidAndProvider, addproviderWG *sync.WaitGroup) {
+	addproviderWG.Add(1)
+	defer addproviderWG.Done()
+	es.mu.Lock()
+	log.Debugf("trying to add cid: %s and provider %s to map", pr.CID, pr.AddressInfo.ID.String())
+	if addressinfo, ok := es.cidAndProviders[pr.CID]; ok {
+		log.Debug("added address info for provider")
+		es.cidAndProviders[pr.CID] = append(addressinfo, pr.AddressInfo)
+	} else {
+		log.Debug("initialized map for cids")
+		addressinfo = append(addressinfo, pr.AddressInfo)
+		es.cidAndProviders[pr.CID] = addressinfo
+	}
+	es.mu.Unlock()
 }
 
 func (es *estimatorState) waitForRPCs(returnThreshold int) {
@@ -266,8 +329,181 @@ func (es *estimatorState) waitForRPCs(returnThreshold int) {
 			}
 		}
 		close(es.doneChan)
+		log.Debug("closed done channel")
 	}()
 
 	// wait until returnThreshold ADD_PROVIDER RPCs have finished
 	wg.Wait()
+}
+
+//A container for the encapsulated struct.
+//
+//File containts a json array of provider records.
+//[{ProviderRecord1},{ProviderRecord2},{ProviderRecord3}]
+type ProviderRecords struct {
+	EncapsulatedJSONProviderRecords []EncapsulatedJSONProviderRecord `json:"ProviderRecords"`
+}
+
+//This struct will be used to create,read and store the encapsulated data necessary for reading the
+//provider records.
+type EncapsulatedJSONProviderRecord struct {
+	ID        string   `json:"PeerID"`
+	CID       string   `json:"ContentID"`
+	Addresses []string `json:"PeerMultiaddresses"`
+}
+
+//Creates a new:
+//	EncapsulatedCidProvider struct {
+//		ID      string
+//		CID     string
+//		Address ma.Multiaddr
+//	}
+func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string) EncapsulatedJSONProviderRecord {
+	return EncapsulatedJSONProviderRecord{
+		ID:        id,
+		CID:       cid,
+		Addresses: addresses,
+	}
+}
+
+const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-libp2p-kad-dht\\providers.json"
+
+//Saves the providers along with the CIDs in a json format. In an error occurs it returns the error or else
+//it returns nil.
+//
+//Because we want to add a new provider record in the file for each new provider record
+//we need to read the contents and add the new provider record to the already existing array.
+func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	log.Debug("starting to save providers to file")
+	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return errors.Wrap(err, "while trying to open json file")
+	}
+	defer func(jsonFile *os.File) {
+		err := jsonFile.Close()
+		if err != nil {
+			log.Errorf("error %s while closing down providers file", err)
+		}
+	}(jsonFile)
+
+	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
+	var records ProviderRecords
+
+	bytes, err := io.ReadAll(jsonFile)
+	if err != nil {
+		return errors.Wrap(err, "while trying to read json file")
+	}
+
+	if len(bytes) != 0 {
+		//read the existing data. Will throw error if they are not of type EncapsulatedJSONproviderRecord
+		err = json.Unmarshal(bytes, &records)
+		if err != nil {
+			return errors.Wrap(err, "while unmarshalling json")
+		}
+	}
+
+	for _, addressInfo := range addressInfos {
+
+		if addressInfo == nil {
+			continue
+		}
+
+		stringaddrss := make([]string, 0)
+		for _, addrss := range addressInfo.Addrs {
+			stringaddrss = append(stringaddrss, addrss.String())
+		}
+
+		//create a new encapsulated struct
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss)
+		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
+		//insert the new provider record to the slice in memory containing the provider records read
+		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
+	}
+	data, err := json.MarshalIndent(&records, "", " ")
+	if err != nil {
+		return errors.Wrap(err, "while marshalling json data")
+	}
+	err = os.WriteFile(filename, data, 0644)
+	if err != nil {
+		return errors.Wrap(err, "while trying to write json data to file")
+	}
+	return nil
+}
+
+func saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	log.Debug("starting to save providers to file")
+	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
+	if err != nil {
+		return errors.Wrap(err, "while trying to open json file")
+	}
+	defer func(jsonFile *os.File) {
+		err := jsonFile.Close()
+		if err != nil {
+			log.Errorf("error %s while closing down providers file", err)
+		}
+	}(jsonFile)
+
+	//create a new instance of ProviderRecords struct which is a container for the encapsulated struct
+	var records ProviderRecords
+
+	encoder := json.NewEncoder(jsonFile)
+
+	for _, addressInfo := range addressInfos {
+		if addressInfo == nil {
+			continue
+		}
+		stringaddrss := make([]string, 0)
+		for _, addrss := range addressInfo.Addrs {
+			stringaddrss = append(stringaddrss, addrss.String())
+		}
+
+		//create a new encapsulated struct
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss)
+		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
+		//insert the new provider record to the slice in memory containing the provider records read
+		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
+	}
+	encoder.Encode(&records)
+	return nil
+}
+
+func saveProvidersToMultipleEncodedJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	newf := fmt.Sprintf("encoded" + contentID + filename)
+	err := saveProvidersToEncodedJSONFile(newf, contentID, addressInfos)
+	if err != nil {
+		return errors.Wrap(err, "while trying to save to multiple json files")
+	}
+	return nil
+}
+
+func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+	newf := fmt.Sprintf(contentID + filename)
+	err := saveProvidersSimpleJSONFile(newf, contentID, addressInfos)
+	if err != nil {
+		return errors.Wrap(err, "while trying to save to multiple json files")
+	}
+	return nil
+}
+
+func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup) {
+	savetofilesWG.Add(1)
+	defer savetofilesWG.Done()
+	for ncid, prs := range es.cidAndProviders {
+		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+		err = saveProvidersToMultipleEncodedJSONFiles("providers.json", ncid, prs)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		}
+	}
 }

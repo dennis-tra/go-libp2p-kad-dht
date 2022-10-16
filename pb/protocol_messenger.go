@@ -114,8 +114,9 @@ func (pm *ProtocolMessenger) GetClosestPeers(ctx context.Context, p peer.ID, id 
 }
 
 // PutProvider asks a peer to store that we are a provider for the given key.
+//Modified by fotis to also return the AddrInfo struct it created.If an error occurs it return an empty peer.AddrInfo struct.
 func (pm *ProtocolMessenger) PutProvider(ctx context.Context, p peer.ID, key multihash.Multihash, host host.Host) error {
-	pi := peer.AddrInfo{
+	pi := &peer.AddrInfo{
 		ID:    host.ID(),
 		Addrs: host.Addrs(),
 	}
@@ -127,7 +128,7 @@ func (pm *ProtocolMessenger) PutProvider(ctx context.Context, p peer.ID, key mul
 	}
 
 	pmes := NewMessage(Message_ADD_PROVIDER, key, 0)
-	pmes.ProviderPeers = RawPeerInfosToPBPeers([]peer.AddrInfo{pi})
+	pmes.ProviderPeers = RawPeerInfosToPBPeers([]peer.AddrInfo{*pi})
 
 	return pm.m.SendMessage(ctx, p, pmes)
 }
