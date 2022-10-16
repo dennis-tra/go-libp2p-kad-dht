@@ -4,12 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/pkg/errors"
 	"io"
 	"math"
 	"os"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p-core/peer"
@@ -407,7 +408,7 @@ func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos
 			continue
 		}
 
-		stringaddrss := make([]string, len(addressInfo.Addrs))
+		stringaddrss := make([]string, 0)
 		for _, addrss := range addressInfo.Addrs {
 			stringaddrss = append(stringaddrss, addrss.String())
 		}
@@ -451,7 +452,7 @@ func saveProvidersToEncodedJSONFile(filename string, contentID string, addressIn
 		if addressInfo == nil {
 			continue
 		}
-		stringaddrss := make([]string, len(addressInfo.Addrs))
+		stringaddrss := make([]string, 0)
 		for _, addrss := range addressInfo.Addrs {
 			stringaddrss = append(stringaddrss, addrss.String())
 		}
