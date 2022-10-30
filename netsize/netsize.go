@@ -10,15 +10,14 @@ import (
 	"time"
 
 	logging "github.com/ipfs/go-log"
-	"github.com/libp2p/go-libp2p-core/peer"
 	kbucket "github.com/libp2p/go-libp2p-kbucket"
+	"github.com/libp2p/go-libp2p/core/peer"
 	ks "github.com/whyrusleeping/go-keyspace"
 )
 
 var (
-	ErrNotEnoughData      = fmt.Errorf("not enough data")
-	ErrWrongNumOfPeers    = fmt.Errorf("expected bucket size number of peers")
-	ErrUncertaintyTooHigh = fmt.Errorf("estimate uncertainty too high") // TODO: unused
+	ErrNotEnoughData   = fmt.Errorf("not enough data")
+	ErrWrongNumOfPeers = fmt.Errorf("expected bucket size number of peers")
 )
 
 var (
