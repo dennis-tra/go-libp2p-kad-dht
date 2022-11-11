@@ -8,6 +8,7 @@ import (
 	"math"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pkg/errors"
@@ -71,6 +72,7 @@ type estimatorState struct {
 	cidAndProviders map[string][]*peer.AddrInfo
 	mu              sync.Mutex
 	addProviderWG   sync.WaitGroup
+	counter         int64
 	//send an empty struct after the ADD providers RPC
 	//have been finished
 	doneProviderChannel chan struct{}
@@ -185,9 +187,10 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	es.waitForRPCs(es.returnThreshold)
 	es.addProviderWG.Wait()
 	var savetofilesWG sync.WaitGroup
-	go es.saveToFiles(&savetofilesWG)
+	go es.saveToFiles(&savetofilesWG, dht.self.Pretty())
 	savetofilesWG.Wait()
 	log.Debug("done waiting for rpcs")
+	log.Debugf("Number of failed put provider: %d", es.counter)
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
 		// tracking lookup results for network size estimator as "completed" is true
@@ -261,6 +264,7 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 	if err != nil {
 		log.Debug("failure while adding provider")
 		es.peerStates[pid] = Failure
+		atomic.AddInt64(&es.counter, 1)
 	} else {
 		log.Debug("success while adding provider")
 		es.peerStates[pid] = Success
@@ -273,7 +277,8 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 			CID:         es.nonHashedKey.String(),
 			AddressInfo: providerRecord,
 		}
-		go es.addNewProviderToMap(cidAndProvider, &es.addProviderWG)
+		es.addProviderWG.Add(1)
+		go es.addNewProviderToMap(cidAndProvider)
 	}
 	es.peerStatesLk.Unlock()
 
@@ -282,10 +287,10 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 	log.Debug("sent empty struct over done channel")
 }
 
+//TODO CHECK
 //Insert the new providers received bty the putProviderRecord method into the corresponding map inside the state.
-func (es *estimatorState) addNewProviderToMap(pr *CidAndProvider, addproviderWG *sync.WaitGroup) {
-	addproviderWG.Add(1)
-	defer addproviderWG.Done()
+func (es *estimatorState) addNewProviderToMap(pr *CidAndProvider) {
+	defer es.addProviderWG.Done()
 	es.mu.Lock()
 	log.Debugf("trying to add cid: %s and provider %s to map", pr.CID, pr.AddressInfo.ID.String())
 	if addressinfo, ok := es.cidAndProviders[pr.CID]; ok {
@@ -349,6 +354,7 @@ type ProviderRecords struct {
 type EncapsulatedJSONProviderRecord struct {
 	ID        string   `json:"PeerID"`
 	CID       string   `json:"ContentID"`
+	Creator   string   `json:Creator`
 	Addresses []string `json:"PeerMultiaddresses"`
 }
 
@@ -358,10 +364,11 @@ type EncapsulatedJSONProviderRecord struct {
 //		CID     string
 //		Address ma.Multiaddr
 //	}
-func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string) EncapsulatedJSONProviderRecord {
+func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string, creator string) EncapsulatedJSONProviderRecord {
 	return EncapsulatedJSONProviderRecord{
 		ID:        id,
 		CID:       cid,
+		Creator:   creator,
 		Addresses: addresses,
 	}
 }
@@ -373,7 +380,7 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
-func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo, creator string) error {
 	log.Debug("starting to save providers to file")
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -414,7 +421,7 @@ func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, creator)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
@@ -430,7 +437,7 @@ func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos
 	return nil
 }
 
-func saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo, creator string) error {
 	log.Debug("starting to save providers to file")
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
@@ -458,7 +465,7 @@ func saveProvidersToEncodedJSONFile(filename string, contentID string, addressIn
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, creator)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
@@ -467,43 +474,43 @@ func saveProvidersToEncodedJSONFile(filename string, contentID string, addressIn
 	return nil
 }
 
-func saveProvidersToMultipleEncodedJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func saveProvidersToMultipleEncodedJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo, creator string) error {
 	newf := fmt.Sprintf("encoded" + contentID + filename)
-	err := saveProvidersToEncodedJSONFile(newf, contentID, addressInfos)
+	err := saveProvidersToEncodedJSONFile(newf, contentID, addressInfos, creator)
 	if err != nil {
 		return errors.Wrap(err, "while trying to save to multiple json files")
 	}
 	return nil
 }
 
-func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, addressInfos []*peer.AddrInfo, creator string) error {
 	newf := fmt.Sprintf(contentID + filename)
-	err := saveProvidersSimpleJSONFile(newf, contentID, addressInfos)
+	err := saveProvidersSimpleJSONFile(newf, contentID, addressInfos, creator)
 	if err != nil {
 		return errors.Wrap(err, "while trying to save to multiple json files")
 	}
 	return nil
 }
 
-func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup) {
+func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator string) {
 	savetofilesWG.Add(1)
 	defer savetofilesWG.Done()
 	for ncid, prs := range es.cidAndProviders {
-		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs)
+		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs, creator)
 		if err != nil {
 			log.Errorf("error: %s", err)
 		}
-		err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs)
+		/* err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs, creator)
+		if err != nil {
+			log.Errorf("error: %s", err)
+		} */
+		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs, creator)
 		if err != nil {
 			log.Errorf("error: %s", err)
 		}
-		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
+		/* err = saveProvidersToMultipleEncodedJSONFiles("providers.json", ncid, prs, creator)
 		if err != nil {
 			log.Errorf("error: %s", err)
-		}
-		err = saveProvidersToMultipleEncodedJSONFiles("providers.json", ncid, prs)
-		if err != nil {
-			log.Errorf("error: %s", err)
-		}
+		} */
 	}
 }
