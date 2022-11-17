@@ -107,7 +107,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashed
 
 	individualThreshold := mathext.GammaIncRegInv(float64(dht.bucketSize), 1-OptProvIndividualThresholdCertainty) / networkSize
 	setThreshold := mathext.GammaIncRegInv(float64(dht.bucketSize)/2.0+1, 1-OptProvSetThresholdStrictness) / networkSize
-	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * OptProvReturnRatio))
+	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * 1))
 
 	return &estimatorState{
 		putCtx:              ctx,
@@ -194,6 +194,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	savetofilesWG.Wait()
 	log.Debug("done waiting for rpcs")
 	log.Debugf("Number of failed put provider: %d", es.counter)
+	es.provideTime = 0
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
 		// tracking lookup results for network size estimator as "completed" is true
@@ -357,9 +358,9 @@ type ProviderRecords struct {
 type EncapsulatedJSONProviderRecord struct {
 	ID          string   `json:"PeerID"`
 	CID         string   `json:"ContentID"`
-	CREATOR     string   `json:Creator`
-	PROVIDETIME string   `json:ProvideTime`
-	USERAGENT   string   `json:UserAgent`
+	Creator     string   `json:"Creator"`
+	ProvideTime string   `json:"ProvideTime"`
+	UserAgent   string   `json:"UserAgent"`
 	Addresses   []string `json:"PeerMultiaddresses"`
 }
 
@@ -373,9 +374,9 @@ func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string, c
 	return EncapsulatedJSONProviderRecord{
 		ID:          id,
 		CID:         cid,
-		CREATOR:     creator,
-		PROVIDETIME: providetime,
-		USERAGENT:   useragent,
+		Creator:     creator,
+		ProvideTime: providetime,
+		UserAgent:   useragent,
 		Addresses:   addresses,
 	}
 }
@@ -387,7 +388,7 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
-func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo, creator string, provideTime string, useragent string) error {
+func (es estimatorState) saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -418,6 +419,8 @@ func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos
 
 	for _, addressInfo := range addressInfos {
 
+		useragent := es.getUserAgent(*addressInfo)
+
 		if addressInfo == nil {
 			continue
 		}
@@ -428,7 +431,7 @@ func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, creator, provideTime, useragent)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
@@ -444,7 +447,7 @@ func saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos
 	return nil
 }
 
-func saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo, creator string, provideTime string, useragent string) error {
+func (es estimatorState) saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
@@ -463,6 +466,9 @@ func saveProvidersToEncodedJSONFile(filename string, contentID string, addressIn
 	encoder := json.NewEncoder(jsonFile)
 
 	for _, addressInfo := range addressInfos {
+
+		useragent := es.getUserAgent(*addressInfo)
+
 		if addressInfo == nil {
 			continue
 		}
@@ -472,7 +478,7 @@ func saveProvidersToEncodedJSONFile(filename string, contentID string, addressIn
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, creator, provideTime, useragent)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
@@ -502,16 +508,11 @@ func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, a
 func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator string) {
 	savetofilesWG.Add(1)
 	defer savetofilesWG.Done()
-	useragentf, err := es.dht.host.Peerstore().Get(peer.ID(es.dht.PeerID().Pretty()), "AgentVersion")
-	var useragent string
-	if err != nil {
-		useragent = "Not Defined"
-	} else {
-		useragent = useragentf.(string)
-	}
+	log.Debugf("Peer id is probably: %s", es.dht.PeerID().String())
 
 	for ncid, prs := range es.cidAndProviders {
-		err := saveProvidersSimpleJSONFile("providers.json", ncid, prs, creator, es.provideTime.String(), useragent)
+
+		err := es.saveProvidersSimpleJSONFile("providers.json", ncid, prs)
 		if err != nil {
 			log.Errorf("error: %s", err)
 		}
@@ -519,7 +520,7 @@ func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator stri
 		if err != nil {
 			log.Errorf("error: %s", err)
 		} */
-		err = saveProvidersToEncodedJSONFile("providersen.json", ncid, prs, creator, es.provideTime.String(), useragent)
+		err = es.saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
 		if err != nil {
 			log.Errorf("error: %s", err)
 		}
@@ -528,4 +529,15 @@ func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator stri
 			log.Errorf("error: %s", err)
 		} */
 	}
+}
+
+func (es estimatorState) getUserAgent(addressInfo peer.AddrInfo) string {
+	useragentf, err := es.dht.host.Peerstore().Get(addressInfo.ID, "AgentVersion")
+	var useragent string
+	if err != nil {
+		useragent = "Not Defined"
+	} else {
+		useragent = useragentf.(string)
+	}
+	return useragent
 }
