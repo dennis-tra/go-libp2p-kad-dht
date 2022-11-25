@@ -2,6 +2,7 @@ package dht
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"time"
 
@@ -22,6 +23,8 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 		return nil, fmt.Errorf("can't lookup empty key")
 	}
 
+	fmt.Printf("%s: %s: GetClosestPeers \n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16])
+
 	//TODO: I can break the interface! return []peer.ID
 	lookupRes, err := dht.runLookupWithFollowup(ctx, key, dht.pmGetClosestPeers(key), func(*qpeerset.QueryPeerset) bool { return false })
 
@@ -34,6 +37,10 @@ func (dht *IpfsDHT) GetClosestPeers(ctx context.Context, key string) ([]peer.ID,
 		// tracking lookup results for network size estimator
 		if err = dht.nsEstimator.Track(key, lookupRes.closest); err != nil {
 			logger.Warnf("network size estimator track peers: %s", err)
+		}
+
+		if s, err := dht.nsEstimator.NetworkSize(); err == nil {
+			fmt.Printf("%s: updated network size: %f\n", time.Now().Format(time.RFC3339Nano), s)
 		}
 
 		// refresh the cpl for this key as the query was successful

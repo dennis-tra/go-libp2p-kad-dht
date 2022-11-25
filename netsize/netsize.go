@@ -1,6 +1,7 @@
 package netsize
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"math/big"
@@ -93,6 +94,13 @@ func (e *Estimator) Track(key string, peers []peer.ID) error {
 	// Calculate weight for the peer distances.
 	weight := e.calcWeight(key)
 
+	cpl := kbucket.CommonPrefixLen(kbucket.ConvertKey(key), e.localID)
+	bucketLevel := e.rt.NPeersForCpl(uint(cpl))
+	fmt.Printf("%s: %s: Tracking peers. CPL: %d, BucketLevel: %d\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16], cpl, bucketLevel)
+	defer func() {
+		fmt.Printf("%s: %s: Tracking peers done.\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16])
+	}()
+
 	// Map given key to the Kademlia key space (hash it)
 	ksKey := ks.XORKeySpace.Key([]byte(key))
 
@@ -106,6 +114,9 @@ func (e *Estimator) Track(key string, peers []peer.ID) error {
 			weight:    weight,
 			timestamp: now,
 		}
+
+		peerCPL := kbucket.CommonPrefixLen(kbucket.ConvertPeerID(p), e.localID)
+		fmt.Printf("%s: %s: Track peer for netsize. Weight: %f, Distance: %e, CPL: %d\n", m.timestamp.Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16], m.weight, m.distance, peerCPL)
 
 		// keep track of this measurement
 		e.measurements[i] = append(e.measurements[i], m)

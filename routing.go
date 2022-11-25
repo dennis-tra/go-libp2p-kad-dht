@@ -3,6 +3,7 @@ package dht
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"time"
@@ -379,6 +380,11 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	keyMH := key.Hash()
 	logger.Debugw("providing", "cid", key, "mh", internal.LoggableProviderRecordBytes(keyMH))
 
+	fmt.Printf("%s: %s: Start Classic Provide: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16], key.String())
+	defer func() {
+		fmt.Printf("%s: %s: Stop Classic Provide: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16], key.String())
+	}()
+
 	// add self locally
 	dht.providerStore.AddProvider(ctx, keyMH, peer.AddrInfo{ID: dht.self})
 	if !brdcst {
@@ -422,13 +428,17 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 		return err
 	}
 
+	fmt.Printf("%s: %s: Classic Provide Done getting closest peers\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16])
+
 	wg := sync.WaitGroup{}
 	for _, p := range peers {
 		wg.Add(1)
 		go func(p peer.ID) {
 			defer wg.Done()
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
+			fmt.Printf("%s: %s: Start Put Provider Record: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16], p.String())
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
+			fmt.Printf("%s: %s: Stop Put Provider Record: hasErr==%t: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16], err != nil, p.String())
 			if err != nil {
 				logger.Debug(err)
 			}
@@ -455,6 +465,10 @@ func (dht *IpfsDHT) OptimisticProvide(ctx context.Context, key cid.Cid) (err err
 		return err
 	}
 
+	fmt.Printf("%s: %s: Start Optimistic Provide: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16], key.String())
+	defer func() {
+		fmt.Printf("%s: %s: Stop Optimistic Provide: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString(keyMH)[:16], key.String())
+	}()
 	return dht.GetAndProvideToClosestPeers(ctx, string(keyMH))
 }
 

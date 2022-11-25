@@ -2,6 +2,7 @@ package dht
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sync"
@@ -89,6 +90,10 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string) (*estimat
 	setThreshold := mathext.GammaIncRegInv(float64(dht.bucketSize)/2.0+1, 1-OptProvSetThresholdStrictness) / networkSize
 	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * OptProvReturnRatio))
 
+	fmt.Printf("%s: %s: network size: %f\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16], networkSize)
+	fmt.Printf("%s: %s: individualThreshold: %e\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16], individualThreshold)
+	fmt.Printf("%s: %s: setThreshold: %e\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16], setThreshold)
+	fmt.Printf("%s: %s: returnThreshold: %d\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(key))[:16], returnThreshold)
 	return &estimatorState{
 		putCtx:              ctx,
 		dht:                 dht,
@@ -142,6 +147,8 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	if err != nil {
 		return err
 	}
+
+	fmt.Printf("%s: %s: Done with lookup: completed==%t \n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16], lookupRes.completed)
 
 	// Store the provider records with all of the closest peers
 	// we haven't already contacted.
@@ -201,6 +208,7 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 
 	// if we have already contacted more than bucketSize peers stop the procedure
 	if sentAndSuccessCount >= es.dht.bucketSize {
+		fmt.Printf("%s: %s: Stop sentAndSuccessCount\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16])
 		return true
 	}
 
@@ -211,12 +219,18 @@ func (es *estimatorState) stopFn(qps *qpeerset.QueryPeerset) bool {
 	}
 	avg := sum / float64(len(distances))
 
+	if avg < es.setThreshold {
+		fmt.Printf("%s: %s: Stop getting closest peers! avg: %e, threshold: %e \n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16], avg, es.setThreshold)
+	}
+
 	// if the average is below the set threshold stop the procedure
 	return avg < es.setThreshold
 }
 
 func (es *estimatorState) putProviderRecord(pid peer.ID) {
+	fmt.Printf("%s: %s: Start Put Provider Record: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16], pid.String())
 	err := es.dht.protoMessenger.PutProvider(es.putCtx, pid, []byte(es.key), es.dht.host)
+	fmt.Printf("%s: %s: Stop Put Provider Record: hasErr==%t: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16], err != nil, pid.String())
 	es.peerStatesLk.Lock()
 	if err != nil {
 		es.peerStates[pid] = Failure
@@ -227,6 +241,8 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 
 	// indicate that this ADD_PROVIDER RPC has completed
 	es.doneChan <- struct{}{}
+
+	fmt.Printf("%s: %s: Done Put Provider Record: %s\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16], pid.String())
 }
 
 // waitForRPCs waits for a subset of ADD_PROVIDER RPCs to complete and then acquire a lease on
@@ -234,6 +250,9 @@ func (es *estimatorState) putProviderRecord(pid peer.ID) {
 // there are already too many requests in-flight we are just waiting for our current set to
 // finish.
 func (es *estimatorState) waitForRPCs() {
+
+	fmt.Printf("%s: %s: wait for RPCs\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16])
+
 	es.peerStatesLk.RLock()
 	rpcCount := len(es.peerStates)
 	es.peerStatesLk.RUnlock()
@@ -261,13 +280,16 @@ func (es *estimatorState) waitForRPCs() {
 	// If that worked we need to consume the doneChan and release the acquired lease on the
 	// optProvJobsPool channel.
 	remaining := rpcCount - int(es.putProvDone.Load())
+	fmt.Printf("%s: %s: handle job pool. remaining: %d, rpcCount: %d\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16], remaining, rpcCount)
 	for i := 0; i < remaining; i++ {
 		select {
 		case es.dht.optProvJobsPool <- struct{}{}:
+			fmt.Printf("%s: %s: acquired lease\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16])
 			// We were able to acquire a lease on the optProvJobsPool channel.
 			// Consume doneChan to release the acquired lease again.
 			go es.consumeDoneChan(rpcCount)
 		case <-es.doneChan:
+			fmt.Printf("%s: %s: resolved\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16])
 			// We were not able to acquire a lease but an ADD_PROVIDER RPC resolved.
 			if int(es.putProvDone.Add(1)) == rpcCount {
 				close(es.doneChan)
@@ -287,4 +309,6 @@ func (es *estimatorState) consumeDoneChan(until int) {
 	if int(es.putProvDone.Add(1)) == until {
 		close(es.doneChan)
 	}
+
+	fmt.Printf("%s: %s: consumed done\n", time.Now().Format(time.RFC3339Nano), hex.EncodeToString([]byte(es.key))[:16])
 }
