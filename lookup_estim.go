@@ -39,6 +39,9 @@ const (
 	OptProvReturnRatio = 1
 )
 
+//number of file created for each 100 cids
+var FileCreated = 1
+
 type addProviderRPCState int
 
 const (
@@ -72,6 +75,7 @@ type estimatorState struct {
 	cidAndProviders map[string][]*peer.AddrInfo
 	mu              sync.Mutex
 	addProviderWG   sync.WaitGroup
+	cid_number      int
 	provideTime     time.Duration
 	counter         int64
 	//send an empty struct after the ADD providers RPC
@@ -98,7 +102,7 @@ type CidAndProvider struct {
 	AddressInfo *peer.AddrInfo
 }
 
-func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashedKey cid.Cid) (*estimatorState, error) {
+func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashedKey cid.Cid, counter int) (*estimatorState, error) {
 	// get network size and err out if there is no reasonable estimate
 	networkSize, err := dht.nsEstimator.NetworkSize()
 	if err != nil {
@@ -114,6 +118,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashed
 		dht:                 dht,
 		key:                 key,
 		nonHashedKey:        nonHashedKey,
+		cid_number:          counter,
 		doneChan:            make(chan struct{}, returnThreshold), // buffered channel to not miss events
 		cidAndProviders:     make(map[string][]*peer.AddrInfo),
 		ksKey:               ks.XORKeySpace.Key([]byte(key)),
@@ -125,7 +130,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashed
 	}, nil
 }
 
-func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key string, nonHashedKey cid.Cid) error {
+func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key string, nonHashedKey cid.Cid, counter int) error {
 	if key == "" {
 		return fmt.Errorf("can't lookup empty key")
 	}
@@ -139,7 +144,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	log.Debug("trying to create new estimator state")
 
-	es, err := dht.newEstimatorState(putCtx, key, nonHashedKey)
+	es, err := dht.newEstimatorState(putCtx, key, nonHashedKey, counter)
 	start := time.Now()
 	if err != nil {
 		//stop the running provide
@@ -388,7 +393,7 @@ const filename = "C:\\Users\\fotis\\GolandProjects\\retrieval-success-rate\\go-l
 //
 //Because we want to add a new provider record in the file for each new provider record
 //we need to read the contents and add the new provider record to the already existing array.
-func (es estimatorState) saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func (es *estimatorState) saveProvidersSimpleJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
@@ -447,7 +452,7 @@ func (es estimatorState) saveProvidersSimpleJSONFile(filename string, contentID 
 	return nil
 }
 
-func (es estimatorState) saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
+func (es *estimatorState) saveProvidersToEncodedJSONFile(filename string, contentID string, addressInfos []*peer.AddrInfo) error {
 	log.Debug("starting to save providers to file")
 	jsonFile, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0644)
 	if err != nil {
@@ -505,22 +510,29 @@ func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, a
 	return nil
 } */
 
-func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator string) {
+func (es *estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator string) {
 	savetofilesWG.Add(1)
 	defer savetofilesWG.Done()
 	log.Debugf("Peer id is probably: %s", es.dht.PeerID().String())
 
 	for ncid, prs := range es.cidAndProviders {
 
-		err := es.saveProvidersSimpleJSONFile("providers.json", ncid, prs)
+		/* err := es.saveProvidersSimpleJSONFile("providers.json", ncid, prs)
 		if err != nil {
 			log.Errorf("error: %s", err)
-		}
+		} */
 		/* err = saveProvidersToMultipleSimpleJSONFiles("providers.json", ncid, prs, creator)
 		if err != nil {
 			log.Errorf("error: %s", err)
 		} */
-		err = es.saveProvidersToEncodedJSONFile("providersen.json", ncid, prs)
+
+		if es.cid_number%100 == 0 {
+			log.Debugf("Cid number inside save to file: %d", es.cid_number)
+			FileCreated++
+		}
+		filename := fmt.Sprintf("providersen%d.json", FileCreated)
+		log.Debugf("Filename is: %s", filename)
+		err := es.saveProvidersToEncodedJSONFile(filename, ncid, prs)
 		if err != nil {
 			log.Errorf("error: %s", err)
 		}
@@ -531,7 +543,7 @@ func (es estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator stri
 	}
 }
 
-func (es estimatorState) getUserAgent(addressInfo peer.AddrInfo) string {
+func (es *estimatorState) getUserAgent(addressInfo peer.AddrInfo) string {
 	useragentf, err := es.dht.host.Peerstore().Get(addressInfo.ID, "AgentVersion")
 	var useragent string
 	if err != nil {

@@ -441,7 +441,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 	return ctx.Err()
 }
 
-func (dht *IpfsDHT) OptimisticProvide(ctx context.Context, key cid.Cid) (err error) {
+func (dht *IpfsDHT) OptimisticProvide(ctx context.Context, key cid.Cid, counter int) (err error) {
 	if !dht.enableProviders {
 		return routing.ErrNotSupported
 	} else if !key.Defined() {
@@ -455,7 +455,7 @@ func (dht *IpfsDHT) OptimisticProvide(ctx context.Context, key cid.Cid) (err err
 		return err
 	}
 
-	return dht.GetAndProvideToClosestPeers(ctx, string(keyMH), key)
+	return dht.GetAndProvideToClosestPeers(ctx, string(keyMH), key, counter)
 }
 
 // FindProviders searches until the context expires.
