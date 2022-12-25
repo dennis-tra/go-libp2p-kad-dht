@@ -528,7 +528,7 @@ func (es *estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator str
 			log.Errorf("error: %s", err)
 		} */
 
-		if es.cid_number%100 == 0 {
+		if es.cid_number%300 == 0 {
 			log.Debugf("Cid number inside save to file: %d", es.cid_number)
 			FileCreated++
 		}
