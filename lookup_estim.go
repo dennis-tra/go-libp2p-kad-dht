@@ -36,7 +36,7 @@ const (
 
 	// OptProvReturnRatio corresponds to how many ADD_PROVIDER RPCs must have completed (regardless of success)
 	// before we return to the user. The ratio of 0.75 equals 15 RPC as it is based on the Kademlia bucket size.
-	OptProvReturnRatio = 0.75
+	OptProvReturnRatio = 1
 )
 
 type addProviderRPCState int
@@ -107,7 +107,7 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashed
 
 	individualThreshold := mathext.GammaIncRegInv(float64(dht.bucketSize), 1-OptProvIndividualThresholdCertainty) / networkSize
 	setThreshold := mathext.GammaIncRegInv(float64(dht.bucketSize)/2.0+1, 1-OptProvSetThresholdStrictness) / networkSize
-	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * 1))
+	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * OptProvReturnRatio))
 
 	return &estimatorState{
 		putCtx:              ctx,
