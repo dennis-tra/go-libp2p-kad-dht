@@ -40,7 +40,7 @@ const (
 )
 
 //number of file created for each 100 cids
-var FileCreated = 1
+var FileCreated = 0
 
 type addProviderRPCState int
 
