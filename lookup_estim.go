@@ -113,6 +113,8 @@ func (dht *IpfsDHT) newEstimatorState(ctx context.Context, key string, nonHashed
 	setThreshold := mathext.GammaIncRegInv(float64(dht.bucketSize)/2.0+1, 1-OptProvSetThresholdStrictness) / networkSize
 	returnThreshold := int(math.Ceil(float64(dht.bucketSize) * OptProvReturnRatio))
 
+	log.Debugf("Counter meaning cid number is: %d", counter)
+
 	return &estimatorState{
 		putCtx:              ctx,
 		dht:                 dht,
