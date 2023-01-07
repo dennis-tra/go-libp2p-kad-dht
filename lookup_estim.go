@@ -1,11 +1,13 @@
 package dht
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
+	"net/http"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -488,6 +490,20 @@ func (es *estimatorState) saveProvidersToEncodedJSONFile(filename string, conten
 		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
+		// create a POST request
+		data, err := json.Marshal(NewEncapsulatedJSONProviderRecord)
+		if err != nil {
+			log.Errorf("Error marshalling trackableCid: %s", err)
+		}
+		req, err := http.NewRequest("POST", "http://localhost:8080/ProviderRecord", bytes.NewReader(data))
+		if err != nil {
+			log.Errorf("Error creating POST request: %s", err)
+		}
+		// send the post request
+		_, err = http.DefaultClient.Do(req)
+		if err != nil {
+			log.Errorf("Error sending POST request: %s", err)
+		}
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
 	}
 	encoder.Encode(&records)
@@ -528,11 +544,11 @@ func (es *estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator str
 			log.Errorf("error: %s", err)
 		} */
 
-		if es.cid_number%300 == 0 {
+		/* if es.cid_number%300 == 0 {
 			log.Debugf("Cid number inside save to file: %d", es.cid_number)
 			FileCreated++
-		}
-		filename := fmt.Sprintf("providersen%d.json", FileCreated)
+		} */
+		filename := fmt.Sprintf("providersen.json", FileCreated)
 		log.Debugf("Filename is: %s", filename)
 		err := es.saveProvidersToEncodedJSONFile(filename, ncid, prs)
 		if err != nil {
