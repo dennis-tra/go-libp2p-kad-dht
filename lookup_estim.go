@@ -548,7 +548,7 @@ func (es *estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator str
 			log.Debugf("Cid number inside save to file: %d", es.cid_number)
 			FileCreated++
 		} */
-		filename := fmt.Sprintf("providersen.json", FileCreated)
+		filename := fmt.Sprintf("providersen.json", "")
 		log.Debugf("Filename is: %s", filename)
 		err := es.saveProvidersToEncodedJSONFile(filename, ncid, prs)
 		if err != nil {
