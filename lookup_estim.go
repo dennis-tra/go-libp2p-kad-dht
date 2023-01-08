@@ -199,11 +199,11 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 	es.addProviderWG.Wait()
 	es.provideTime = time.Since(start)
 	var savetofilesWG sync.WaitGroup
+	savetofilesWG.Add(1)
 	go es.saveToFiles(&savetofilesWG, dht.self.Pretty())
 	savetofilesWG.Wait()
 	log.Debug("done waiting for rpcs")
 	log.Debugf("Number of failed put provider: %d", es.counter)
-	es.provideTime = 0
 	if outerCtx.Err() == nil && lookupRes.completed { // likely the "completed" field is false but that's not a given
 
 		// tracking lookup results for network size estimator as "completed" is true
@@ -530,7 +530,7 @@ func saveProvidersToMultipleSimpleJSONFiles(filename string, contentID string, a
 } */
 
 func (es *estimatorState) saveToFiles(savetofilesWG *sync.WaitGroup, creator string) {
-	savetofilesWG.Add(1)
+
 	defer savetofilesWG.Done()
 	log.Debugf("Peer id is probably: %s", es.dht.PeerID().String())
 
