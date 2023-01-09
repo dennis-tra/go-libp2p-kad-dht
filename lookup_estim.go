@@ -78,6 +78,7 @@ type estimatorState struct {
 	mu              sync.Mutex
 	addProviderWG   sync.WaitGroup
 	cid_number      int
+	publicationTime time.Time
 	provideTime     time.Duration
 	counter         int64
 	//send an empty struct after the ADD providers RPC
@@ -150,6 +151,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	es, err := dht.newEstimatorState(putCtx, key, nonHashedKey, counter)
 	start := time.Now()
+	es.publicationTime = start
 	if err != nil {
 		//stop the running provide
 		putCtxCancel()
@@ -365,12 +367,13 @@ type ProviderRecords struct {
 //This struct will be used to create,read and store the encapsulated data necessary for reading the
 //provider records.
 type EncapsulatedJSONProviderRecord struct {
-	ID          string   `json:"PeerID"`
-	CID         string   `json:"ContentID"`
-	Creator     string   `json:"Creator"`
-	ProvideTime string   `json:"ProvideTime"`
-	UserAgent   string   `json:"UserAgent"`
-	Addresses   []string `json:"PeerMultiaddresses"`
+	ID              string   `json:"PeerID"`
+	CID             string   `json:"ContentID"`
+	Creator         string   `json:"Creator"`
+	PublicationTime string   `json:"PublicationTime"`
+	ProvideTime     string   `json:"ProvideTime"`
+	UserAgent       string   `json:"UserAgent"`
+	Addresses       []string `json:"PeerMultiaddresses"`
 }
 
 //Creates a new:
@@ -379,14 +382,15 @@ type EncapsulatedJSONProviderRecord struct {
 //		CID     string
 //		Address ma.Multiaddr
 //	}
-func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string, creator string, providetime string, useragent string) EncapsulatedJSONProviderRecord {
+func NewEncapsulatedJSONCidProvider(id string, cid string, addresses []string, creator string, publicationTime string, providetime string, useragent string) EncapsulatedJSONProviderRecord {
 	return EncapsulatedJSONProviderRecord{
-		ID:          id,
-		CID:         cid,
-		Creator:     creator,
-		ProvideTime: providetime,
-		UserAgent:   useragent,
-		Addresses:   addresses,
+		ID:              id,
+		CID:             cid,
+		Creator:         creator,
+		PublicationTime: publicationTime,
+		ProvideTime:     providetime,
+		UserAgent:       useragent,
+		Addresses:       addresses,
 	}
 }
 
@@ -440,7 +444,7 @@ func (es *estimatorState) saveProvidersSimpleJSONFile(filename string, contentID
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.provideTime.String(), useragent)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.publicationTime.String(), es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
@@ -487,7 +491,7 @@ func (es *estimatorState) saveProvidersToEncodedJSONFile(filename string, conten
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.provideTime.String(), useragent)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.publicationTime.String(), es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 
