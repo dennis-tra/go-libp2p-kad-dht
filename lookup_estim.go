@@ -78,7 +78,7 @@ type estimatorState struct {
 	mu              sync.Mutex
 	addProviderWG   sync.WaitGroup
 	cid_number      int
-	publicationTime time.Time
+	publicationTime string
 	provideTime     time.Duration
 	counter         int64
 	//send an empty struct after the ADD providers RPC
@@ -151,7 +151,7 @@ func (dht *IpfsDHT) GetAndProvideToClosestPeers(outerCtx context.Context, key st
 
 	es, err := dht.newEstimatorState(putCtx, key, nonHashedKey, counter)
 	start := time.Now()
-	es.publicationTime = start
+	es.publicationTime = time.Now().Format(time.RFC3339)
 	if err != nil {
 		//stop the running provide
 		putCtxCancel()
@@ -444,7 +444,7 @@ func (es *estimatorState) saveProvidersSimpleJSONFile(filename string, contentID
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.publicationTime.String(), es.provideTime.String(), useragent)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.publicationTime, es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 		records.EncapsulatedJSONProviderRecords = append(records.EncapsulatedJSONProviderRecords, NewEncapsulatedJSONProviderRecord)
@@ -491,7 +491,7 @@ func (es *estimatorState) saveProvidersToEncodedJSONFile(filename string, conten
 		}
 
 		//create a new encapsulated struct
-		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.publicationTime.String(), es.provideTime.String(), useragent)
+		NewEncapsulatedJSONProviderRecord := NewEncapsulatedJSONCidProvider(addressInfo.ID.String(), contentID, stringaddrss, es.dht.self.Pretty(), es.publicationTime, es.provideTime.String(), useragent)
 		log.Debugf("Created new encapsulated JSON provider record: ID:%s,CID:%s,Addresses:%v", NewEncapsulatedJSONProviderRecord.ID, NewEncapsulatedJSONProviderRecord.CID, NewEncapsulatedJSONProviderRecord.Addresses)
 		//insert the new provider record to the slice in memory containing the provider records read
 
