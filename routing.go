@@ -430,6 +430,7 @@ func (dht *IpfsDHT) Provide(ctx context.Context, key cid.Cid, brdcst bool) (err 
 			logger.Debugf("putProvider(%s, %s)", internal.LoggableProviderRecordBytes(keyMH), p)
 			err := dht.protoMessenger.PutProvider(ctx, p, keyMH, dht.host)
 			if err != nil {
+				fmt.Println("This is sometimes the error 😱: ", err) // Write on stream %d canceled with error code 0
 				logger.Debug(err)
 			}
 		}(p)
