@@ -117,7 +117,7 @@ var Defaults = func(o *Config) error {
 	o.MaxRecordAge = time.Hour * 36
 
 	o.BucketSize = defaultBucketSize
-	o.Concurrency = 10
+	o.Concurrency = 20
 	o.Resiliency = 3
 
 	return nil
