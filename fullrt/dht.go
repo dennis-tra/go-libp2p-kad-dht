@@ -33,7 +33,7 @@ import (
 	"github.com/libp2p/go-libp2p-kad-dht/crawler"
 	"github.com/libp2p/go-libp2p-kad-dht/internal"
 	internalConfig "github.com/libp2p/go-libp2p-kad-dht/internal/config"
-	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
+	"github.com/libp2p/go-libp2p-kad-dht/net"
 	dht_pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
 	kb "github.com/libp2p/go-libp2p-kbucket"
@@ -593,7 +593,8 @@ func (dht *FullRT) SearchValue(ctx context.Context, key string, opts ...routing.
 }
 
 func (dht *FullRT) searchValueQuorum(ctx context.Context, key string, valCh <-chan RecvdVal, stopCh chan struct{},
-	out chan<- []byte, nvals int) ([]byte, map[peer.ID]struct{}, bool) {
+	out chan<- []byte, nvals int,
+) ([]byte, map[peer.ID]struct{}, bool) {
 	numResponses := 0
 	return dht.processValues(ctx, key, valCh,
 		func(ctx context.Context, v RecvdVal, better bool) bool {
@@ -615,7 +616,8 @@ func (dht *FullRT) searchValueQuorum(ctx context.Context, key string, valCh <-ch
 }
 
 func (dht *FullRT) processValues(ctx context.Context, key string, vals <-chan RecvdVal,
-	newVal func(ctx context.Context, v RecvdVal, better bool) bool) (best []byte, peersWithBest map[peer.ID]struct{}, aborted bool) {
+	newVal func(ctx context.Context, v RecvdVal, better bool) bool,
+) (best []byte, peersWithBest map[peer.ID]struct{}, aborted bool) {
 loop:
 	for {
 		if aborted {

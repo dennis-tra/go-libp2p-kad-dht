@@ -18,11 +18,15 @@ import (
 	kb "github.com/libp2p/go-libp2p-kbucket"
 )
 
+type QueryIdCtxKey struct{}
+
 // ErrNoPeersQueried is returned when we failed to connect to any peers.
 var ErrNoPeersQueried = errors.New("failed to query any peers")
 
-type queryFn func(context.Context, peer.ID) ([]*peer.AddrInfo, error)
-type stopFn func() bool
+type (
+	queryFn func(context.Context, peer.ID) ([]*peer.AddrInfo, error)
+	stopFn  func() bool
+)
 
 // query represents a single DHT query.
 type query struct {
@@ -156,9 +160,11 @@ func (dht *IpfsDHT) runQuery(ctx context.Context, target string, queryFn queryFn
 		})
 		return nil, kb.ErrLookupFailure
 	}
+	id := uuid.New()
+	ctx = context.WithValue(ctx, QueryIdCtxKey{}, id)
 
 	q := &query{
-		id:         uuid.New(),
+		id:         id,
 		key:        target,
 		ctx:        ctx,
 		dht:        dht,

@@ -6,7 +6,9 @@ import (
 	"time"
 
 	dhtcfg "github.com/libp2p/go-libp2p-kad-dht/internal/config"
+	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 
@@ -306,6 +308,13 @@ func disableFixLowPeersRoutine(t *testing.T) Option {
 func forceAddressUpdateProcessing(t *testing.T) Option {
 	return func(c *dhtcfg.Config) error {
 		c.TestAddressUpdateProcessing = true
+		return nil
+	}
+}
+
+func MessageSenderImpl(messageSenderInit func(h host.Host, protos []protocol.ID) pb.MessageSender) Option {
+	return func(c *dhtcfg.Config) error {
+		c.MessageSenderFunc = messageSenderInit
 		return nil
 	}
 }

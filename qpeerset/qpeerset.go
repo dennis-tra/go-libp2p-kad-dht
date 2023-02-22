@@ -29,17 +29,17 @@ type QueryPeerset struct {
 	key ks.Key
 
 	// all known peers
-	all []queryPeerState
+	all []QueryPeerState
 
 	// sorted is true if all is currently in sorted order
 	sorted bool
 }
 
-type queryPeerState struct {
-	id         peer.ID
-	distance   *big.Int
-	state      PeerState
-	referredBy peer.ID
+type QueryPeerState struct {
+	ID         peer.ID
+	Distance   *big.Int
+	State      PeerState
+	ReferredBy peer.ID
 }
 
 type sortedQueryPeerset QueryPeerset
@@ -53,7 +53,7 @@ func (sqp *sortedQueryPeerset) Swap(i, j int) {
 }
 
 func (sqp *sortedQueryPeerset) Less(i, j int) bool {
-	di, dj := sqp.all[i].distance, sqp.all[j].distance
+	di, dj := sqp.all[i].Distance, sqp.all[j].Distance
 	return di.Cmp(dj) == -1
 }
 
@@ -62,14 +62,14 @@ func (sqp *sortedQueryPeerset) Less(i, j int) bool {
 func NewQueryPeerset(key string) *QueryPeerset {
 	return &QueryPeerset{
 		key:    ks.XORKeySpace.Key([]byte(key)),
-		all:    []queryPeerState{},
+		all:    []QueryPeerState{},
 		sorted: false,
 	}
 }
 
 func (qp *QueryPeerset) find(p peer.ID) int {
 	for i := range qp.all {
-		if qp.all[i].id == p {
+		if qp.all[i].ID == p {
 			return i
 		}
 	}
@@ -89,7 +89,7 @@ func (qp *QueryPeerset) TryAdd(p, referredBy peer.ID) bool {
 		return false
 	} else {
 		qp.all = append(qp.all,
-			queryPeerState{id: p, distance: qp.distanceToKey(p), state: PeerHeard, referredBy: referredBy})
+			QueryPeerState{ID: p, Distance: qp.distanceToKey(p), State: PeerHeard, ReferredBy: referredBy})
 		qp.sorted = false
 		return true
 	}
@@ -106,19 +106,19 @@ func (qp *QueryPeerset) sort() {
 // SetState sets the state of peer p to s.
 // If p is not in the peerset, SetState panics.
 func (qp *QueryPeerset) SetState(p peer.ID, s PeerState) {
-	qp.all[qp.find(p)].state = s
+	qp.all[qp.find(p)].State = s
 }
 
 // GetState returns the state of peer p.
 // If p is not in the peerset, GetState panics.
 func (qp *QueryPeerset) GetState(p peer.ID) PeerState {
-	return qp.all[qp.find(p)].state
+	return qp.all[qp.find(p)].State
 }
 
 // GetReferrer returns the peer that referred us to the peer p.
 // If p is not in the peerset, GetReferrer panics.
 func (qp *QueryPeerset) GetReferrer(p peer.ID) peer.ID {
-	return qp.all[qp.find(p)].referredBy
+	return qp.all[qp.find(p)].ReferredBy
 }
 
 // GetClosestNInStates returns the closest to the key peers, which are in one of the given states.
@@ -132,8 +132,8 @@ func (qp *QueryPeerset) GetClosestNInStates(n int, states ...PeerState) (result 
 	}
 
 	for _, p := range qp.all {
-		if _, ok := m[p.state]; ok {
-			result = append(result, p.id)
+		if _, ok := m[p.State]; ok {
+			result = append(result, p.ID)
 		}
 	}
 	if len(result) >= n {
@@ -156,4 +156,8 @@ func (qp *QueryPeerset) NumHeard() int {
 // NumWaiting returns the number of peers in state PeerWaiting.
 func (qp *QueryPeerset) NumWaiting() int {
 	return len(qp.GetClosestInStates(PeerWaiting))
+}
+
+func (qp *QueryPeerset) AllStates() []QueryPeerState {
+	return qp.all
 }
