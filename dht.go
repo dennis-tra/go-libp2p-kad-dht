@@ -8,6 +8,16 @@ import (
 	"sync"
 	"time"
 
+	"github.com/benbjohnson/clock"
+	"github.com/plprobelab/go-kademlia/coord"
+	"github.com/plprobelab/go-kademlia/events/scheduler/simplescheduler"
+	"github.com/plprobelab/go-kademlia/kad"
+	"github.com/plprobelab/go-kademlia/key"
+	"github.com/plprobelab/go-kademlia/libp2p"
+	kadquery "github.com/plprobelab/go-kademlia/query"
+	"github.com/plprobelab/go-kademlia/routing/triert"
+	"github.com/plprobelab/go-kademlia/util"
+
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -160,6 +170,11 @@ type IpfsDHT struct {
 	// addrFilter is used to filter the addresses we put into the peer store.
 	// Mostly used to filter out localhost and local addresses.
 	addrFilter func([]ma.Multiaddr) []ma.Multiaddr
+
+	// ------ go-kademlia ------
+
+	coordinator  *coord.Coordinator[key.Key256, ma.Multiaddr]
+	queryWaiters map[kadquery.QueryID]chan<- kad.Response[key.Key256, ma.Multiaddr]
 }
 
 // Assert that IPFS assumptions about interfaces aren't broken. These aren't a
@@ -249,7 +264,54 @@ func New(ctx context.Context, h host.Host, options ...Option) (*IpfsDHT, error) 
 		dht.runFixLowPeersLoop()
 	}
 
+	rt, err := triert.New[key.Key256](newPeerID(h.ID()).Key(), nil)
+	if err != nil {
+		return nil, err
+	}
+	sched := simplescheduler.NewSimpleScheduler(clock.New())
+	ep := libp2p.NewLibp2pEndpoint(ctx, h, sched)
+	c, _ := coord.NewCoordinator[key.Key256, ma.Multiaddr](ep, rt, nil)
+
+	dht.coordinator = c
+	dht.queryWaiters = make(map[kadquery.QueryID]chan<- kad.Response[key.Key256, ma.Multiaddr])
+
 	return dht, nil
+}
+
+func (d *IpfsDHT) Start(ctx context.Context) {
+	ctx, span := util.StartSpan(ctx, "IpfsDHT.Start")
+	defer span.End()
+	go d.loop(ctx)
+}
+
+func (d *IpfsDHT) loop(ctx context.Context) {
+	ctx, span := util.StartSpan(ctx, "IpfsDHT.loop")
+	defer span.End()
+
+	kadEvents := d.coordinator.Start(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-kadEvents:
+			switch tev := ev.(type) {
+			case *coord.KademliaOutboundQueryProgressedEvent[key.Key256, ma.Multiaddr]:
+				// TODO: locking
+				ch, ok := d.queryWaiters[tev.QueryID]
+				if !ok {
+					// we have lost the query waiter somehow
+					d.coordinator.StopQuery(ctx, tev.QueryID)
+					continue
+				}
+
+				// notify the waiter
+				ch <- tev.Response
+
+			default:
+				panic(fmt.Sprintf("unexpected event: %T", tev))
+			}
+		}
+	}
 }
 
 // NewDHT creates a new DHT object with the given peer as the 'local' host.
@@ -412,7 +474,6 @@ func makeRoutingTable(dht *IpfsDHT, cfg dhtcfg.Config, maxLastSuccessfulOutbound
 		df, err := peerdiversity.NewFilter(dht.rtPeerDiversityFilter, "rt/diversity", func(p peer.ID) int {
 			return kb.CommonPrefixLen(dht.selfKey, kb.ConvertPeerID(p))
 		})
-
 		if err != nil {
 			return nil, fmt.Errorf("failed to construct peer diversity filter: %w", err)
 		}

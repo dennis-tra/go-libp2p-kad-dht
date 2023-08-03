@@ -8,6 +8,15 @@ import (
 	"sync"
 	"time"
 
+	"github.com/multiformats/go-multiaddr"
+
+	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
+
+	"github.com/plprobelab/go-kademlia/kad"
+	"github.com/plprobelab/go-kademlia/key"
+	"github.com/plprobelab/go-kademlia/network/address"
+	kadquery "github.com/plprobelab/go-kademlia/query"
+
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/peerstore"
@@ -204,7 +213,8 @@ func (dht *IpfsDHT) SearchValue(ctx context.Context, key string, opts ...routing
 }
 
 func (dht *IpfsDHT) searchValueQuorum(ctx context.Context, key string, valCh <-chan recvdVal, stopCh chan struct{},
-	out chan<- []byte, nvals int) ([]byte, map[peer.ID]struct{}, bool) {
+	out chan<- []byte, nvals int,
+) ([]byte, map[peer.ID]struct{}, bool) {
 	numResponses := 0
 	return dht.processValues(ctx, key, valCh,
 		func(ctx context.Context, v recvdVal, better bool) bool {
@@ -226,7 +236,8 @@ func (dht *IpfsDHT) searchValueQuorum(ctx context.Context, key string, valCh <-c
 }
 
 func (dht *IpfsDHT) processValues(ctx context.Context, key string, vals <-chan recvdVal,
-	newVal func(ctx context.Context, v recvdVal, better bool) bool) (best []byte, peersWithBest map[peer.ID]struct{}, aborted bool) {
+	newVal func(ctx context.Context, v recvdVal, better bool) bool,
+) (best []byte, peersWithBest map[peer.ID]struct{}, aborted bool) {
 loop:
 	for {
 		if aborted {
@@ -372,7 +383,6 @@ func (dht *IpfsDHT) getValues(ctx context.Context, key string, stopQuery chan st
 				}
 			},
 		)
-
 		if err != nil {
 			return
 		}
@@ -577,7 +587,6 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(key),
 		func(ctx context.Context, p peer.ID) ([]*peer.AddrInfo, error) {
-
 			// For DHT query command
 			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
 				Type: routing.SendingQuery,
@@ -641,6 +650,11 @@ func (dht *IpfsDHT) findProvidersAsyncRoutine(ctx context.Context, key multihash
 	}
 }
 
+func (d *IpfsDHT) registerQueryWaiter(queryID kadquery.QueryID, ch chan<- kad.Response[key.Key256, multiaddr.Multiaddr]) {
+	// TODO: locking
+	d.queryWaiters[queryID] = ch
+}
+
 // FindPeer searches for a peer with given ID.
 func (dht *IpfsDHT) FindPeer(ctx context.Context, id peer.ID) (_ peer.AddrInfo, err error) {
 	ctx, span := internal.StartSpan(ctx, "IpfsDHT.FindPeer", trace.WithAttributes(attribute.Stringer("PeerID", id)))
@@ -655,6 +669,47 @@ func (dht *IpfsDHT) FindPeer(ctx context.Context, id peer.ID) (_ peer.AddrInfo, 
 	// Check if were already connected to them
 	if pi := dht.FindLocal(ctx, id); pi.ID != "" {
 		return pi, nil
+	}
+
+	var queryID kadquery.QueryID = "testquery" // TODO: randomize to support multiple queries
+
+	msg := pb.NewMessage(pb.Message_FIND_NODE, []byte(id), 0)
+	msg.EmptyResponse()
+	err = dht.coordinator.StartQuery(ctx, queryID, address.ProtocolID(d.protocols[0]), msg)
+	if err != nil {
+		return peer.AddrInfo{}, fmt.Errorf("failed to start query: %w", err)
+	}
+
+	ch := make(chan kad.Response[key.Key256, multiaddr.Multiaddr])
+	dht.registerQueryWaiter(queryID, ch)
+
+	// wait for query to finish
+	for {
+		select {
+		case <-ctx.Done():
+			return peer.AddrInfo{}, ctx.Err()
+		case resp, ok := <-ch:
+			if !ok {
+				// channel was closed, so query can't progress
+				dht.coordinator.StopQuery(ctx, queryID)
+				return peer.AddrInfo{}, fmt.Errorf("query was unexpectedly stopped")
+			}
+
+			// For DHT query command
+			routing.PublishQueryEvent(ctx, &routing.QueryEvent{
+				Type: routing.SendingQuery,
+				ID:   p,
+			})
+
+			println("IpfsHandler.FindNode: got FindNode response")
+			for _, found := range resp.CloserNodes() {
+				if key.Equal(found.ID().Key(), newPeerID(id).Key()) {
+					// found the node we were looking for
+					dht.coordinator.StopQuery(ctx, queryID)
+					return found, nil
+				}
+			}
+		}
 	}
 
 	lookupRes, err := dht.runLookupWithFollowup(ctx, string(id),
@@ -690,7 +745,6 @@ func (dht *IpfsDHT) FindPeer(ctx context.Context, id peer.ID) (_ peer.AddrInfo, 
 			return dht.host.Network().Connectedness(id) == network.Connected
 		},
 	)
-
 	if err != nil {
 		return peer.AddrInfo{}, err
 	}
