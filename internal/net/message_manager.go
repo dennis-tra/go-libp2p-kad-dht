@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	metrics2 "github.com/libp2p/go-libp2p-kad-dht/metrics"
+
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -19,7 +21,6 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/libp2p/go-libp2p-kad-dht/internal"
-	"github.com/libp2p/go-libp2p-kad-dht/internal/metrics"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 )
 
@@ -69,11 +70,11 @@ func (m *messageSenderImpl) OnDisconnect(ctx context.Context, p peer.ID) {
 // SendRequest sends out a request, but also makes sure to
 // measure the RTT for latency measurements.
 func (m *messageSenderImpl) SendRequest(ctx context.Context, p peer.ID, pmes *pb.Message) (*pb.Message, error) {
-	ctx = metrics.ContextWithAttributes(ctx, metrics.UpsertMessageType(pmes))
+	ctx = metrics2.ContextWithAttributes(ctx, metrics2.UpsertMessageType(pmes))
 
 	ms, err := m.messageSenderForPeer(ctx, p)
 	if err != nil {
-		metrics.RecordRequestSendErr(ctx)
+		metrics2.RecordRequestSendErr(ctx)
 		logger.Debugw("request failed to open message sender", "error", err, "to", p)
 		return nil, err
 	}
@@ -88,24 +89,24 @@ func (m *messageSenderImpl) SendRequest(ctx context.Context, p peer.ID, pmes *pb
 
 	rpmes, err := ms.SendRequest(ctx, pmes)
 	if err != nil {
-		metrics.RecordRequestSendErr(ctx)
+		metrics2.RecordRequestSendErr(ctx)
 		logger.Debugw("request failed", "error", err, "to", p)
 		return nil, err
 	}
 
 	outboundLatency := float64(time.Since(start)) / float64(time.Millisecond)
-	metrics.RecordRequestSendOK(ctx, int64(len(marshalled)), outboundLatency)
+	metrics2.RecordRequestSendOK(ctx, int64(len(marshalled)), outboundLatency)
 	m.host.Peerstore().RecordLatency(p, time.Since(start))
 	return rpmes, nil
 }
 
 // SendMessage sends out a message
 func (m *messageSenderImpl) SendMessage(ctx context.Context, p peer.ID, pmes *pb.Message) error {
-	ctx = metrics.ContextWithAttributes(ctx, metrics.UpsertMessageType(pmes))
+	ctx = metrics2.ContextWithAttributes(ctx, metrics2.UpsertMessageType(pmes))
 
 	ms, err := m.messageSenderForPeer(ctx, p)
 	if err != nil {
-		metrics.RecordMessageSendErr(ctx)
+		metrics2.RecordMessageSendErr(ctx)
 
 		logger.Debugw("message failed to open message sender", "error", err, "to", p)
 		return err
@@ -118,12 +119,12 @@ func (m *messageSenderImpl) SendMessage(ctx context.Context, p peer.ID, pmes *pb
 	}
 
 	if err := ms.SendMessage(ctx, pmes); err != nil {
-		metrics.RecordRequestSendErr(ctx)
+		metrics2.RecordRequestSendErr(ctx)
 		logger.Debugw("message failed", "error", err, "to", p)
 		return err
 	}
 
-	metrics.RecordMessageSendOK(ctx, int64(len(marshalled)))
+	metrics2.RecordMessageSendOK(ctx, int64(len(marshalled)))
 	return nil
 }
 

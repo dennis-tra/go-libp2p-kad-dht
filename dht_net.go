@@ -4,9 +4,10 @@ import (
 	"io"
 	"time"
 
+	metrics2 "github.com/libp2p/go-libp2p-kad-dht/metrics"
+
 	"github.com/libp2p/go-libp2p/core/network"
 
-	"github.com/libp2p/go-libp2p-kad-dht/internal/metrics"
 	"github.com/libp2p/go-libp2p-kad-dht/internal/net"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"google.golang.org/protobuf/proto"
@@ -64,7 +65,7 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 					zap.Error(err))
 			}
 			if msgLen > 0 {
-				metrics.RecordMessageRecvErr(ctx, "", int64(msgLen))
+				metrics2.RecordMessageRecvErr(ctx, "", int64(msgLen))
 			}
 			return false
 		}
@@ -75,7 +76,7 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 				c.Write(zap.String("from", mPeer.String()),
 					zap.Error(err))
 			}
-			metrics.RecordMessageRecvErr(ctx, "", int64(msgLen))
+			metrics2.RecordMessageRecvErr(ctx, "", int64(msgLen))
 			return false
 		}
 
@@ -83,11 +84,11 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 
 		startTime := time.Now()
 
-		attrMsgType := attribute.Key(metrics.KeyMessageType).String(req.GetType().String())
+		attrMsgType := attribute.Key(metrics2.KeyMessageType).String(req.GetType().String())
 		// store a new context to not pollute the parent dht.ctx
-		ctx := metrics.ContextWithAttributes(ctx, attrMsgType)
+		ctx := metrics2.ContextWithAttributes(ctx, attrMsgType)
 
-		metrics.RecordMessageRecvOK(ctx, int64(msgLen))
+		metrics2.RecordMessageRecvOK(ctx, int64(msgLen))
 
 		if dht.onRequestHook != nil {
 			dht.onRequestHook(ctx, s, &req)
@@ -95,7 +96,7 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 
 		handler := dht.handlerForMsgType(req.GetType())
 		if handler == nil {
-			metrics.RecordMessageHandleErr(ctx)
+			metrics2.RecordMessageHandleErr(ctx)
 			if c := baseLogger.Check(zap.DebugLevel, "can't handle received message"); c != nil {
 				c.Write(zap.String("from", mPeer.String()),
 					zap.Int32("type", int32(req.GetType())))
@@ -108,9 +109,9 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 				zap.Int32("type", int32(req.GetType())),
 				zap.Binary("key", req.GetKey()))
 		}
-		resp, err := handler(ctx, mPeer, &req)
+		resp, err := dht.dhtHandlerWrapper(handler, ctx, mPeer, &req)
 		if err != nil {
-			metrics.RecordMessageHandleErr(ctx)
+			metrics2.RecordMessageHandleErr(ctx)
 			if c := baseLogger.Check(zap.DebugLevel, "error handling message"); c != nil {
 				c.Write(zap.String("from", mPeer.String()),
 					zap.Int32("type", int32(req.GetType())),
@@ -134,7 +135,7 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 		// send out response msg
 		err = net.WriteMsg(s, resp)
 		if err != nil {
-			metrics.RecordMessageHandleErr(ctx)
+			metrics2.RecordMessageHandleErr(ctx)
 			if c := baseLogger.Check(zap.DebugLevel, "error writing response"); c != nil {
 				c.Write(zap.String("from", mPeer.String()),
 					zap.Int32("type", int32(req.GetType())),
@@ -154,6 +155,6 @@ func (dht *IpfsDHT) handleNewMessage(s network.Stream) bool {
 		}
 
 		latencyMillis := float64(elapsedTime) / float64(time.Millisecond)
-		metrics.RecordRequestLatency(ctx, latencyMillis)
+		metrics2.RecordRequestLatency(ctx, latencyMillis)
 	}
 }

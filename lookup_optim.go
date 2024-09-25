@@ -8,7 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/libp2p/go-libp2p-kad-dht/internal/metrics"
+	"github.com/libp2p/go-libp2p-kad-dht/metrics"
+
 	"github.com/libp2p/go-libp2p-kad-dht/netsize"
 	"github.com/libp2p/go-libp2p-kad-dht/qpeerset"
 	kb "github.com/libp2p/go-libp2p-kbucket"

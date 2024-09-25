@@ -74,6 +74,8 @@ type Config struct {
 
 	EnableOptimisticProvide       bool
 	OptimisticProvideJobsPoolSize int
+
+	DhtHandlerWrapper func(func(context.Context, peer.ID, *pb.Message) (*pb.Message, error), context.Context, peer.ID, *pb.Message) (*pb.Message, error)
 }
 
 func EmptyQueryFilter(_ interface{}, ai peer.AddrInfo) bool { return true }

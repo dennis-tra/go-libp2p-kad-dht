@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	metrics2 "github.com/libp2p/go-libp2p-kad-dht/metrics"
+
 	"github.com/libp2p/go-libp2p-routing-helpers/tracing"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
@@ -20,7 +22,6 @@ import (
 
 	"github.com/libp2p/go-libp2p-kad-dht/internal"
 	dhtcfg "github.com/libp2p/go-libp2p-kad-dht/internal/config"
-	"github.com/libp2p/go-libp2p-kad-dht/internal/metrics"
 	"github.com/libp2p/go-libp2p-kad-dht/netsize"
 	pb "github.com/libp2p/go-libp2p-kad-dht/pb"
 	"github.com/libp2p/go-libp2p-kad-dht/providers"
@@ -166,6 +167,8 @@ type IpfsDHT struct {
 	addrFilter func([]ma.Multiaddr) []ma.Multiaddr
 
 	onRequestHook func(ctx context.Context, s network.Stream, req *pb.Message)
+
+	dhtHandlerWrapper func(func(context.Context, peer.ID, *pb.Message) (*pb.Message, error), context.Context, peer.ID, *pb.Message) (*pb.Message, error)
 }
 
 // Assert that IPFS assumptions about interfaces aren't broken. These aren't a
@@ -206,6 +209,13 @@ func New(ctx context.Context, h host.Host, options ...Option) (*IpfsDHT, error) 
 	dht.enableProviders = cfg.EnableProviders
 	dht.enableValues = cfg.EnableValues
 	dht.disableFixLowPeers = cfg.DisableFixLowPeers
+	if cfg.DhtHandlerWrapper == nil {
+		dht.dhtHandlerWrapper = func(handler func(context.Context, peer.ID, *pb.Message) (*pb.Message, error), ctx context.Context, id peer.ID, message *pb.Message) (*pb.Message, error) {
+			return handler(ctx, id, message)
+		}
+	} else {
+		dht.dhtHandlerWrapper = cfg.DhtHandlerWrapper
+	}
 
 	dht.Validator = cfg.Validator
 	dht.msgSender = cfg.MsgSenderBuilder(h, dht.protocols)
@@ -917,10 +927,10 @@ func (dht *IpfsDHT) newContextWithLocalTags(ctx context.Context, extraAttrs ...a
 	allAttrs := make([]attribute.KeyValue, 0, len(extraAttrs)+2)
 	copy(allAttrs, extraAttrs)
 
-	allAttrs = append(allAttrs, attribute.Key(metrics.KeyPeerID).String(dht.self.String()))
-	allAttrs = append(allAttrs, attribute.Key(metrics.KeyInstanceID).String(fmt.Sprintf("%p", dht)))
+	allAttrs = append(allAttrs, attribute.Key(metrics2.KeyPeerID).String(dht.self.String()))
+	allAttrs = append(allAttrs, attribute.Key(metrics2.KeyInstanceID).String(fmt.Sprintf("%p", dht)))
 
-	return metrics.ContextWithAttributes(ctx, allAttrs...)
+	return metrics2.ContextWithAttributes(ctx, allAttrs...)
 }
 
 func (dht *IpfsDHT) maybeAddAddrs(p peer.ID, addrs []ma.Multiaddr, ttl time.Duration) {
